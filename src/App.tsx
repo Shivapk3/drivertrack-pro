@@ -153,14 +153,31 @@ export default function App() {
     fetchDrivers();
   }, []);
 
+  // --- REPLACED FAKE APIs WITH DIRECT SUPABASE CALLS ---
+
   const fetchDriver = async (id: string) => {
     try {
-      const res = await fetch('/api/drivers');
-      const driversList = await res.json();
-      const match = driversList.find((d: Driver) => d.id === id);
-      if (match) {
-        setUser(match);
-        if (match.role === 'admin' || match.mobile === '9492911408') {
+      const { data: profile, error } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', id)
+        .single();
+
+      if (error) throw error;
+
+      if (profile) {
+        const currentDriver: Driver = {
+          id: profile.id,
+          mobile: profile.phone?.replace('+91', '') || '',
+          name: profile.full_name || profile.vehicle_name || 'Fleet Admin',
+          role: profile.role || (profile.is_admin ? 'admin' : 'driver'),
+          vehicle_number: profile.vehicle_number,
+          vehicle_type: profile.vehicle_type
+        };
+
+        setUser(currentDriver);
+        
+        if (profile.is_admin === true || profile.role === 'admin' || currentDriver.mobile === '9492911408') {
           setView('admin');
         } else {
           setView('driver');
@@ -168,24 +185,39 @@ export default function App() {
         }
       }
     } catch (e) {
-      console.error(e);
+      console.error("Profile sync error:", e);
     }
   };
 
   const fetchVehicles = async () => {
-    const res = await fetch('/api/vehicles');
-    setVehicles(await res.json());
+    const { data, error } = await supabase.from('vehicles').select('*');
+    if (data) setVehicles(data);
   };
 
   const fetchDrivers = async () => {
-    const res = await fetch('/api/drivers');
-    setDrivers(await res.json());
+    const { data, error } = await supabase.from('profiles').select('*');
+    if (data) {
+      const mappedDrivers = data.map(profile => ({
+        id: profile.id,
+        mobile: profile.phone?.replace('+91', '') || '',
+        name: profile.full_name || profile.vehicle_name || 'Driver',
+        role: profile.role || (profile.is_admin ? 'admin' : 'driver'),
+        vehicle_number: profile.vehicle_number,
+        vehicle_name: profile.vehicle_name,
+        vehicle_type: profile.vehicle_type
+      })) as Driver[];
+      setDrivers(mappedDrivers);
+    }
   };
 
   const fetchActiveTrip = async (driverId: string) => {
-    const res = await fetch(`/api/trips?driver_id=${driverId}&status=active`);
-    const data = await res.json();
-    if (data.length > 0) {
+    const { data, error } = await supabase
+      .from('trips')
+      .select('*')
+      .eq('driver_id', driverId)
+      .eq('status', 'active');
+      
+    if (data && data.length > 0) {
       setActiveTrip(data[0]);
       setCurrentScreen('home');
       fetchFuelLogs(data[0].id);
@@ -194,34 +226,41 @@ export default function App() {
   };
 
   const fetchAllTrips = async () => {
-    const res = await fetch('/api/trips');
-    setTrips(await res.json());
+    const { data, error } = await supabase.from('trips').select('*').order('created_at', { ascending: false });
+    if (data) setTrips(data);
   };
 
   const fetchFuelLogs = async (tripId: number) => {
-    const res = await fetch(`/api/fuel-logs?trip_id=${tripId}`);
-    setFuelLogs(await res.json());
+    const { data, error } = await supabase.from('fuel_logs').select('*').eq('trip_id', tripId);
+    if (data) setFuelLogs(data);
   };
 
   const fetchRestLogs = async (tripId: number) => {
-    const res = await fetch(`/api/rest-logs?trip_id=${tripId}`);
-    const logs = await res.json();
-    setRestLogs(logs);
-    const active = logs.find((r: RestLog) => !r.end_time);
-    setActiveRest(active || null);
+    const { data, error } = await supabase.from('rest_logs').select('*').eq('trip_id', tripId);
+    if (data) {
+      setRestLogs(data);
+      const active = data.find(r => !r.end_time);
+      setActiveRest(active || null);
+    }
   };
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
     try {
+      const cleanMobile = mobile.trim();
+      const cleanPassword = password.trim();
+
       const { error } = await supabase.auth.signInWithPassword({
-        email: `${mobile}@driver.local`,
-        password: password
+        email: `${cleanMobile}@driver.local`,
+        password: cleanPassword
       });
-      if (error) throw new Error('Invalid credentials. Contact admin.');
+
+      if (error) {
+        throw new Error(error.message);
+      }
     } catch (err: any) {
-      alert(err.message);
+      alert(`Login Error: ${err.message}`);
     } finally {
       setLoading(false);
     }
@@ -236,35 +275,30 @@ export default function App() {
     setLoading(true);
     try {
       const { data, error } = await supabase.auth.signUp({
-        email: `${newDriverMobile}@driver.local`,
-        password: newDriverPassword
+        email: `${newDriverMobile.trim()}@driver.local`,
+        password: newDriverPassword.trim()
       });
 
       if (error) throw error;
 
       if (data.user) {
-        await fetch('/api/drivers', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            id: data.user.id,
-            mobile: newDriverMobile,
-            name: newDriverName,
-            role: 'driver',
-            vehicle_name: newVehicleName || null,
-            vehicle_number: newVehicleNumber,
-            vehicle_type: newVehicleType
-          })
+        // Create the Profile Row directly in Supabase
+        await supabase.from('profiles').insert({
+          id: data.user.id,
+          phone: `+91${newDriverMobile.trim()}`,
+          role: 'driver',
+          full_name: newDriverName,
+          vehicle_name: newVehicleName || null,
+          vehicle_number: newVehicleNumber,
+          vehicle_type: newVehicleType,
+          is_admin: false
         });
 
-        await fetch('/api/vehicles', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            vehicle_number: newVehicleNumber,
-            model: newVehicleName || 'Fleet Vehicle',
-            type: newVehicleType
-          })
+        // Create the Vehicle Row directly in Supabase
+        await supabase.from('vehicles').insert({
+          vehicle_number: newVehicleNumber,
+          model: newVehicleName || 'Fleet Vehicle',
+          type: newVehicleType
         });
 
         alert(`Driver added successfully!\nName: ${newDriverName}`);
@@ -288,19 +322,17 @@ export default function App() {
     if (!activeTrip) return;
     setLoading(true);
     try {
-      const res = await fetch('/api/rest-logs', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          trip_id: activeTrip.id,
-          location_name: restLocation,
-          notes: restNotes,
-          gps_lat: gps?.lat,
-          gps_lng: gps?.lng
-        })
-      });
-      const rest = await res.json();
-      setActiveRest(rest);
+      const { data, error } = await supabase.from('rest_logs').insert({
+        trip_id: activeTrip.id,
+        location_name: restLocation,
+        notes: restNotes,
+        start_gps_lat: gps?.lat,
+        start_gps_lng: gps?.lng
+      }).select().single();
+
+      if (error) throw error;
+      
+      setActiveRest(data);
       fetchRestLogs(activeTrip.id);
       setCurrentScreen('home');
       setRestLocation('');
@@ -316,15 +348,12 @@ export default function App() {
     if (!activeRest) return;
     setLoading(true);
     try {
-      await fetch('/api/rest-logs', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          id: activeRest.id,
-          gps_lat: gps?.lat,
-          gps_lng: gps?.lng
-        })
-      });
+      await supabase.from('rest_logs').update({
+        end_time: new Date().toISOString(),
+        end_gps_lat: gps?.lat,
+        end_gps_lng: gps?.lng
+      }).eq('id', activeRest.id);
+
       setActiveRest(null);
       if (activeTrip) fetchRestLogs(activeTrip.id);
     } catch (err) {
@@ -362,23 +391,21 @@ export default function App() {
 
     setLoading(true);
     try {
-      const res = await fetch('/api/trips', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          driver_id: user.id,
-          driver_name: user.name,
-          vehicle_id: selectedVehicle.id,
-          vehicle_number: selectedVehicle.vehicle_number,
-          destination_name: destination,
-          starting_km: parseFloat(startingKm),
-          starting_km_image: startingKmImage,
-          start_gps_lat: gps?.lat,
-          start_gps_lng: gps?.lng
-        })
-      });
+      const { data: trip, error } = await supabase.from('trips').insert({
+        driver_id: user.id,
+        driver_name: user.name,
+        vehicle_id: selectedVehicle.id,
+        vehicle_number: selectedVehicle.vehicle_number,
+        destination_name: destination,
+        starting_km: parseFloat(startingKm),
+        starting_km_image: startingKmImage,
+        start_gps_lat: gps?.lat,
+        start_gps_lng: gps?.lng,
+        status: 'active'
+      }).select().single();
 
-      const trip = await res.json();
+      if (error) throw error;
+
       setActiveTrip(trip);
       setCurrentScreen('home');
       fetchAllTrips();
@@ -400,19 +427,15 @@ export default function App() {
 
     setLoading(true);
     try {
-      await fetch('/api/fuel-logs', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          trip_id: activeTrip.id,
-          fuel_quantity: parseFloat(fuelQuantity),
-          fuel_amount: parseFloat(fuelAmount),
-          current_km: parseFloat(currentKm),
-          fuel_station_name: fuelStation,
-          fuel_bill_image: fuelBillImage,
-          gps_lat: gps?.lat,
-          gps_lng: gps?.lng
-        })
+      await supabase.from('fuel_logs').insert({
+        trip_id: activeTrip.id,
+        fuel_quantity: parseFloat(fuelQuantity),
+        fuel_amount: parseFloat(fuelAmount),
+        current_km: parseFloat(currentKm),
+        fuel_station_name: fuelStation,
+        fuel_bill_image: fuelBillImage,
+        gps_lat: gps?.lat,
+        gps_lng: gps?.lng
       });
 
       fetchFuelLogs(activeTrip.id);
@@ -434,21 +457,17 @@ export default function App() {
 
     setLoading(true);
     try {
-      const res = await fetch('/api/trips', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          id: activeTrip.id,
-          arrival_km: parseFloat(arrivalKm),
-          arrival_km_image: arrivalKmImage,
-          arrival_gps_lat: gps?.lat,
-          arrival_gps_lng: gps?.lng,
-          status: 'destination_reached',
-          destination_name: destination || activeTrip.destination_name
-        })
-      });
+      const { data: updated, error } = await supabase.from('trips').update({
+        arrival_km: parseFloat(arrivalKm),
+        arrival_km_image: arrivalKmImage,
+        arrival_gps_lat: gps?.lat,
+        arrival_gps_lng: gps?.lng,
+        status: 'destination_reached',
+        destination_name: destination || activeTrip.destination_name
+      }).eq('id', activeTrip.id).select().single();
 
-      const updated = await res.json();
+      if (error) throw error;
+
       setActiveTrip(updated);
       setCurrentScreen('home');
       fetchAllTrips();
@@ -464,21 +483,17 @@ export default function App() {
 
     setLoading(true);
     try {
-      const res = await fetch('/api/trips', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          id: activeTrip.id,
-          final_km: parseFloat(finalKm),
-          final_km_image: finalKmImage,
-          end_gps_lat: gps?.lat,
-          end_gps_lng: gps?.lng,
-          notes,
-          status: 'completed'
-        })
-      });
+      const { error } = await supabase.from('trips').update({
+        final_km: parseFloat(finalKm),
+        final_km_image: finalKmImage,
+        end_gps_lat: gps?.lat,
+        end_gps_lng: gps?.lng,
+        notes,
+        status: 'completed'
+      }).eq('id', activeTrip.id);
 
-      await res.json();
+      if (error) throw error;
+
       setActiveTrip(null);
       setCurrentScreen('home');
       fetchAllTrips();
