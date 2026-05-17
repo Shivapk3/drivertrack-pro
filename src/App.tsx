@@ -7,7 +7,10 @@ type Driver = {
   id: string;
   mobile: string;
   name: string;
-  vehicle_assigned?: string;
+  role: 'driver' | 'admin';
+  vehicle_name?: string;
+  vehicle_number?: string;
+  vehicle_type?: string;
 };
 
 type Vehicle = {
@@ -88,19 +91,22 @@ export default function App() {
   const [fuelLogs, setFuelLogs] = useState<FuelLog[]>([]);
   const [currentScreen, setCurrentScreen] = useState<'home' | 'start' | 'fuel' | 'destination' | 'end' | 'rest'>('home');
   const [gps, setGps] = useState<{lat: number, lng: number} | null>(null);
-  const [showAdmin, setShowAdmin] = useState(false);
   const [adminTab, setAdminTab] = useState<'dashboard' | 'drivers'>('dashboard');
   const [drivers, setDrivers] = useState<Driver[]>([]);
-  const [newDriverMobile, setNewDriverMobile] = useState('');
-  const [newDriverName, setNewDriverName] = useState('');
-  const [newDriverPassword, setNewDriverPassword] = useState('');
-  const [newDriverVehicle, setNewDriverVehicle] = useState('');
   const [restLogs, setRestLogs] = useState<RestLog[]>([]);
   const [activeRest, setActiveRest] = useState<RestLog | null>(null);
   const [restLocation, setRestLocation] = useState('');
   const [restNotes, setRestNotes] = useState('');
 
-  // Form states
+  // Enhanced Form states for creating new drivers requested by Admin
+  const [newDriverName, setNewDriverName] = useState('');
+  const [newDriverMobile, setNewDriverMobile] = useState('');
+  const [newDriverPassword, setNewDriverPassword] = useState('');
+  const [newVehicleName, setNewVehicleName] = useState('');
+  const [newVehicleNumber, setNewVehicleNumber] = useState('');
+  const [newVehicleType, setNewVehicleType] = useState('Truck');
+
+  // Trip form states
   const [selectedVehicle, setSelectedVehicle] = useState<Vehicle | null>(null);
   const [destination, setDestination] = useState('');
   const [startingKm, setStartingKm] = useState('');
@@ -120,15 +126,13 @@ export default function App() {
   const [uploadTarget, setUploadTarget] = useState<'start' | 'fuel' | 'arrival' | 'final' | null>(null);
 
   useEffect(() => {
-    // Get GPS
     if (navigator.geolocation) {
       navigator.geolocation.getCurrentPosition(
         (pos) => setGps({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
-        () => console.log('GPS denied')
+        () => console.log('GPS access denied')
       );
     }
 
-    // Check auth
     supabase.auth.getSession().then(({ data: { session } }: any) => {
       if (session?.user) {
         fetchDriver(session.user.id);
@@ -150,13 +154,22 @@ export default function App() {
   }, []);
 
   const fetchDriver = async (id: string) => {
-    const res = await fetch('/api/drivers');
-    const drivers = await res.json();
-    const driver = drivers.find((d: Driver) => d.id === id);
-    if (driver) {
-      setUser(driver);
-      setView(driver.mobile === '9999999999' ? 'admin' : 'driver');
-      fetchActiveTrip(id);
+    try {
+      const res = await fetch('/api/drivers');
+      const driversData = await res.json();
+      const currentDriver = driversData.find((d: Driver) => d.id === id);
+      if (currentDriver) {
+        setUser(currentDriver);
+        // Explicitly check role flag or admin credential pattern
+        if (currentDriver.role === 'admin' || currentDriver.mobile === '9492911408') {
+          setView('admin');
+        } else {
+          setView('driver');
+          fetchActiveTrip(id);
+        }
+      }
+    } catch (e) {
+      console.error("Error identifying driver session", e);
     }
   };
 
@@ -191,6 +204,12 @@ export default function App() {
     setFuelLogs(await res.json());
   };
 
+  const fetchActiveTripLogs = async () => {
+    if (activeTrip) {
+      fetchFuelLogs(activeTrip.id);
+    }
+  };
+
   const fetchRestLogs = async (tripId: number) => {
     const res = await fetch(`/api/rest-logs?trip_id=${tripId}`);
     const logs = await res.json();
@@ -204,14 +223,13 @@ export default function App() {
     setLoading(true);
     
     try {
-      // Admin-created accounts only - no auto signup
       const { error } = await supabase.auth.signInWithPassword({
         email: `${mobile}@driver.local`,
         password: password
       });
 
       if (error) {
-        throw new Error('Invalid mobile or password. Contact admin for credentials.');
+        throw new Error('Invalid credentials. Access Denied.');
       }
     } catch (err: any) {
       alert(err.message);
@@ -221,14 +239,13 @@ export default function App() {
   };
 
   const createDriver = async () => {
-    if (!newDriverMobile || !newDriverName || !newDriverPassword) {
-      alert('Fill all fields');
+    if (!newDriverMobile || !newDriverName || !newDriverPassword || !newVehicleNumber) {
+      alert('Fill all required fields (*)');
       return;
     }
 
     setLoading(true);
     try {
-      // Create auth user
       const { data, error } = await supabase.auth.signUp({
         email: `${newDriverMobile}@driver.local`,
         password: newDriverPassword
@@ -237,7 +254,7 @@ export default function App() {
       if (error) throw error;
 
       if (data.user) {
-        // Create driver record
+        // Post full extended credentials directly into database via API layer
         await fetch('/api/drivers', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -245,20 +262,39 @@ export default function App() {
             id: data.user.id,
             mobile: newDriverMobile,
             name: newDriverName,
-            vehicle_assigned: newDriverVehicle || null
+            role: 'driver',
+            vehicle_name: newVehicleName || null,
+            vehicle_number: newVehicleNumber,
+            vehicle_type: newVehicleType
           })
         });
 
-        alert(`Driver created!\nMobile: ${newDriverMobile}\nPassword: ${newDriverPassword}`);
+        // Also add vehicle data instantly to list if unique
+        await fetch('/api/vehicles', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            vehicle_number: newVehicleNumber,
+            model: newVehicleName || 'Standard Fleet',
+            type: newVehicleType
+          })
+        });
+
+        alert(`Driver Successfully Registered!\nName: ${newDriverName}\nMobile: ${newDriverMobile}`);
         
+        // Reset configuration forms
         setNewDriverMobile('');
         setNewDriverName('');
         setNewDriverPassword('');
-        setNewDriverVehicle('');
+        setNewVehicleName('');
+        setNewVehicleNumber('');
+        setNewVehicleType('Truck');
+        
         fetchDrivers();
+        fetchVehicles();
       }
     } catch (err: any) {
-      alert('Error: ' + err.message);
+      alert('Registration Failed: ' + err.message);
     } finally {
       setLoading(false);
     }
@@ -288,7 +324,7 @@ export default function App() {
       setRestLocation('');
       setRestNotes('');
     } catch (err) {
-      alert('Failed to start rest');
+      alert('Failed to initialize rest log');
     } finally {
       setLoading(false);
     }
@@ -312,7 +348,7 @@ export default function App() {
       setActiveRest(null);
       if (activeTrip) fetchRestLogs(activeTrip.id);
     } catch (err) {
-      alert('Failed to end rest');
+      alert('Failed to close rest protocol');
     } finally {
       setLoading(false);
     }
@@ -340,7 +376,7 @@ export default function App() {
 
   const startTrip = async () => {
     if (!user || !selectedVehicle || !destination || !startingKm) {
-      alert('Fill all fields');
+      alert('Provide all metrics to initialize');
       return;
     }
 
@@ -367,12 +403,11 @@ export default function App() {
       setCurrentScreen('home');
       fetchAllTrips();
       
-      // Reset form
       setDestination('');
       setStartingKm('');
       setStartingKmImage('');
     } catch (err) {
-      alert('Failed to start trip');
+      alert('Odometer submission failed');
     } finally {
       setLoading(false);
     }
@@ -380,7 +415,7 @@ export default function App() {
 
   const addFuel = async () => {
     if (!activeTrip || !fuelQuantity || !fuelAmount || !currentKm) {
-      alert('Fill all fields');
+      alert('Complete all text fields');
       return;
     }
 
@@ -404,14 +439,13 @@ export default function App() {
       fetchFuelLogs(activeTrip.id);
       setCurrentScreen('home');
       
-      // Reset
       setFuelQuantity('');
       setFuelAmount('');
       setCurrentKm('');
       setFuelStation('');
       setFuelBillImage('');
     } catch (err) {
-      alert('Failed to log fuel');
+      alert('Fuel telemetry upload failed');
     } finally {
       setLoading(false);
     }
@@ -441,7 +475,7 @@ export default function App() {
       setCurrentScreen('home');
       fetchAllTrips();
     } catch (err) {
-      alert('Failed to update');
+      alert('Failed to reach target terminal');
     } finally {
       setLoading(false);
     }
@@ -471,14 +505,13 @@ export default function App() {
       setCurrentScreen('home');
       fetchAllTrips();
       
-      // Reset
       setFinalKm('');
       setFinalKmImage('');
       setNotes('');
       setArrivalKm('');
       setFuelLogs([]);
     } catch (err) {
-      alert('Failed to end trip');
+      alert('Failed to execute telemetry save');
     } finally {
       setLoading(false);
     }
@@ -488,6 +521,7 @@ export default function App() {
     await supabase.auth.signOut();
     setUser(null);
     setActiveTrip(null);
+    setView('login');
   };
 
   const formatDuration = (minutes: number) => {
@@ -539,7 +573,6 @@ export default function App() {
                   className="w-full bg-zinc-900/50 border border-zinc-800 rounded-2xl px-4 py-3.5 text-white placeholder-zinc-600 focus:outline-none focus:border-emerald-500/50 focus:ring-2 focus:ring-emerald-500/20 transition-all"
                   required
                 />
-                <p className="text-xs text-zinc-600 mt-1.5">Admin: 9999999999 / admin123</p>
               </div>
 
               <button
@@ -547,7 +580,7 @@ export default function App() {
                 disabled={loading}
                 className="w-full bg-white text-black font-semibold rounded-2xl py-3.5 hover:bg-zinc-200 transition-colors disabled:opacity-50 mt-2"
               >
-                {loading ? 'Signing in...' : 'Continue'}
+                {loading ? 'Validating ID...' : 'Continue'}
               </button>
             </form>
 
@@ -573,7 +606,7 @@ export default function App() {
     );
   }
 
-  if (view === 'admin' || showAdmin) {
+  if (view === 'admin') {
     const completedTrips = trips.filter(t => t.status === 'completed');
     
     return (
@@ -585,20 +618,12 @@ export default function App() {
                 <BarChart3 className="w-5 h-5" />
               </div>
               <div>
-                <h1 className="font-semibold">Admin Dashboard</h1>
-                <p className="text-xs text-zinc-500 -mt-0.5">Fleet overview</p>
+                <h1 className="font-semibold">Admin Panel</h1>
+                <p className="text-xs text-zinc-500 -mt-0.5">Control Tower</p>
               </div>
             </div>
             <div className="flex items-center gap-2">
-              {user?.mobile !== '9999999999' && (
-                <button
-                  onClick={() => setShowAdmin(false)}
-                  className="px-3 py-1.5 rounded-xl bg-zinc-900 hover:bg-zinc-800 text-sm flex items-center gap-1.5"
-                >
-                  <ArrowLeft className="w-4 h-4" /> Driver View
-                </button>
-              )}
-              <button onClick={logout} className="p-2 hover:bg-zinc-900 rounded-xl">
+              <button onClick={logout} className="p-2 hover:bg-zinc-900 rounded-xl" title="Logout">
                 <LogOut className="w-5 h-5 text-zinc-500" />
               </button>
             </div>
@@ -606,7 +631,7 @@ export default function App() {
         </header>
 
         <main className="max-w-7xl mx-auto p-4 sm:p-6">
-          {/* Tabs */}
+          {/* Top Admin View Switcher tabs */}
           <div className="flex items-center gap-2 mb-6 border-b border-zinc-800">
             <button
               onClick={() => setAdminTab('dashboard')}
@@ -617,7 +642,7 @@ export default function App() {
               }`}
             >
               <BarChart3 className="w-4 h-4 inline mr-2 -mt-0.5" />
-              Dashboard
+              Dashboard Report
             </button>
             <button
               onClick={() => setAdminTab('drivers')}
@@ -634,193 +659,212 @@ export default function App() {
 
           {adminTab === 'dashboard' && (
             <>
-          {/* Stats */}
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
-            {[
-              { label: 'Total Trips', value: completedTrips.length, icon: Truck, color: 'from-emerald-500 to-teal-500' },
-              { label: 'Total KM', value: Math.round(completedTrips.reduce((s, t) => s + (t.total_distance || 0), 0)).toLocaleString(), icon: Navigation, color: 'from-cyan-500 to-blue-500' },
-              { label: 'Fuel Used', value: `${Math.round(completedTrips.reduce((s, t) => s + (t.total_fuel_used || 0), 0))} L`, icon: Fuel, color: 'from-amber-500 to-orange-500' },
-              { label: 'Avg Mileage', value: `${(completedTrips.reduce((s, t) => s + (t.mileage || 0), 0) / (completedTrips.length || 1)).toFixed(1)} km/L`, icon: Gauge, color: 'from-violet-500 to-purple-500' },
-            ].map((stat) => (
-              <div key={stat.label} className="bg-zinc-900/50 border border-zinc-800 rounded-2xl p-4">
-                <div className={`w-10 h-10 rounded-xl bg-gradient-to-br ${stat.color} flex items-center justify-center mb-3`}>
-                  <stat.icon className="w-5 h-5 text-white" />
-                </div>
-                <div className="text-2xl font-semibold">{stat.value}</div>
-                <div className="text-xs text-zinc-500 mt-1">{stat.label}</div>
+              {/* Aggregated Analytical Cards */}
+              <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
+                {[
+                  { label: 'Total Trips', value: completedTrips.length, icon: Truck, color: 'from-emerald-500 to-teal-500' },
+                  { label: 'Total KM Run', value: Math.round(completedTrips.reduce((s, t) => s + (t.total_distance || 0), 0)).toLocaleString(), icon: Navigation, color: 'from-cyan-500 to-blue-500' },
+                  { label: 'Fuel Dispatched', value: `${Math.round(completedTrips.reduce((s, t) => s + (t.total_fuel_used || 0), 0))} L`, icon: Fuel, color: 'from-amber-500 to-orange-500' },
+                  { label: 'Avg Fleet Mileage', value: `${(completedTrips.reduce((s, t) => s + (t.mileage || 0), 0) / (completedTrips.length || 1)).toFixed(1)} km/L`, icon: Gauge, color: 'from-violet-500 to-purple-500' },
+                ].map((stat) => (
+                  <div key={stat.label} className="bg-zinc-900/50 border border-zinc-800 rounded-2xl p-4">
+                    <div className={`w-10 h-10 rounded-xl bg-gradient-to-br ${stat.color} flex items-center justify-center mb-3`}>
+                      <stat.icon className="w-5 h-5 text-white" />
+                    </div>
+                    <div className="text-2xl font-semibold">{stat.value}</div>
+                    <div className="text-xs text-zinc-500 mt-1">{stat.label}</div>
+                  </div>
+                ))}
               </div>
-            ))}
-          </div>
 
-          {/* Trips Table */}
-          <div className="bg-zinc-900/50 border border-zinc-800 rounded-2xl overflow-hidden">
-            <div className="px-5 py-4 border-b border-zinc-800 flex items-center justify-between">
-              <h2 className="font-semibold">Completed Trips</h2>
-              <span className="text-xs px-2.5 py-1 rounded-lg bg-zinc-800 text-zinc-400">{completedTrips.length} trips</span>
-            </div>
-            
-            <div className="overflow-x-auto">
-              <table className="w-full">
-                <thead className="bg-zinc-950/50 border-b border-zinc-800">
-                  <tr className="text-left text-xs text-zinc-500">
-                    <th className="px-5 py-3 font-medium">Driver</th>
-                    <th className="px-5 py-3 font-medium">Vehicle</th>
-                    <th className="px-5 py-3 font-medium">Route</th>
-                    <th className="px-5 py-3 font-medium">Distance</th>
-                    <th className="px-5 py-3 font-medium">Fuel</th>
-                    <th className="px-5 py-3 font-medium">Mileage</th>
-                    <th className="px-5 py-3 font-medium">Duration</th>
-                    <th className="px-5 py-3 font-medium">Images</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-zinc-800/50">
-                  {completedTrips.map((trip) => (
-                    <tr key={trip.id} className="hover:bg-zinc-800/30 transition-colors">
-                      <td className="px-5 py-3.5">
-                        <div className="font-medium text-sm">{trip.driver_name}</div>
-                        <div className="text-xs text-zinc-500">{new Date(trip.start_time).toLocaleDateString()}</div>
-                      </td>
-                      <td className="px-5 py-3.5 text-sm font-mono">{trip.vehicle_number}</td>
-                      <td className="px-5 py-3.5">
-                        <div className="text-sm max-w-[140px] truncate">{trip.destination_name}</div>
-                      </td>
-                      <td className="px-5 py-3.5">
-                        <div className="text-sm font-medium">{trip.total_distance?.toFixed(0)} km</div>
-                        <div className="text-xs text-zinc-500">{trip.starting_km} → {trip.final_km}</div>
-                      </td>
-                      <td className="px-5 py-3.5">
-                        <div className="text-sm">{trip.total_fuel_used?.toFixed(1)} L</div>
-                        <div className="text-xs text-zinc-500">₹{trip.total_fuel_cost?.toFixed(0)}</div>
-                      </td>
-                      <td className="px-5 py-3.5">
-                        <span className={`inline-flex items-center px-2.5 py-1 rounded-lg text-xs font-medium ${
-                          (trip.mileage || 0) > 12 ? 'bg-emerald-500/10 text-emerald-400' :
-                          (trip.mileage || 0) > 8 ? 'bg-amber-500/10 text-amber-400' :
-                          'bg-red-500/10 text-red-400'
-                        }`}>
-                          {trip.mileage?.toFixed(1)} km/L
-                        </span>
-                      </td>
-                      <td className="px-5 py-3.5 text-sm text-zinc-400">
-                        {trip.duration_minutes ? formatDuration(trip.duration_minutes) : '-'}
-                      </td>
-                      <td className="px-5 py-3.5">
-                        <div className="flex gap-1.5">
-                          {trip.starting_km_image && (
-                            <a href={trip.starting_km_image} target="_blank" className="p-1.5 hover:bg-zinc-800 rounded-lg" title="Start KM">
-                              <ImageIcon className="w-3.5 h-3.5 text-zinc-500" />
-                            </a>
-                          )}
-                          {trip.final_km_image && (
-                            <a href={trip.final_km_image} target="_blank" className="p-1.5 hover:bg-zinc-800 rounded-lg" title="End KM">
-                              <ImageIcon className="w-3.5 h-3.5 text-zinc-500" />
-                            </a>
-                          )}
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-              
-              {completedTrips.length === 0 && (
-                <div className="py-16 text-center text-zinc-600">
-                  <Truck className="w-12 h-12 mx-auto mb-3 opacity-20" />
-                  <p>No completed trips yet</p>
+              {/* Master Data Log Table */}
+              <div className="bg-zinc-900/50 border border-zinc-800 rounded-2xl overflow-hidden">
+                <div className="px-5 py-4 border-b border-zinc-800 flex items-center justify-between">
+                  <h2 className="font-semibold">Fleet Manifest Records</h2>
+                  <span className="text-xs px-2.5 py-1 rounded-lg bg-zinc-800 text-zinc-400">{completedTrips.length} entries</span>
                 </div>
-              )}
-            </div>
-          </div>
-          </>
+                
+                <div className="overflow-x-auto">
+                  <table className="w-full">
+                    <thead className="bg-zinc-950/50 border-b border-zinc-800">
+                      <tr className="text-left text-xs text-zinc-500">
+                        <th className="px-5 py-3 font-medium">Driver Profile</th>
+                        <th className="px-5 py-3 font-medium">Vehicle ID</th>
+                        <th className="px-5 py-3 font-medium">Route Terminal</th>
+                        <th className="px-5 py-3 font-medium">Odometer Traveled</th>
+                        <th className="px-5 py-3 font-medium">Fuel Stats</th>
+                        <th className="px-5 py-3 font-medium">Performance Metrics</th>
+                        <th className="px-5 py-3 font-medium">Time Elapsed</th>
+                        <th className="px-5 py-3 font-medium">Odometer Proof</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-zinc-800/50">
+                      {completedTrips.map((trip) => (
+                        <tr key={trip.id} className="hover:bg-zinc-800/30 transition-colors">
+                          <td className="px-5 py-3.5">
+                            <div className="font-medium text-sm">{trip.driver_name}</div>
+                            <div className="text-xs text-zinc-500">{new Date(trip.start_time).toLocaleDateString()}</div>
+                          </td>
+                          <td className="px-5 py-3.5 text-sm font-mono text-cyan-400">{trip.vehicle_number}</td>
+                          <td className="px-5 py-3.5 text-sm max-w-[140px] truncate">{trip.destination_name}</td>
+                          <td className="px-5 py-3.5">
+                            <div className="text-sm font-medium">{trip.total_distance?.toFixed(0)} km</div>
+                            <div className="text-xs text-zinc-500">{trip.starting_km} → {trip.final_km}</div>
+                          </td>
+                          <td className="px-5 py-3.5">
+                            <div className="text-sm">{trip.total_fuel_used?.toFixed(1)} L</div>
+                            <div className="text-xs text-zinc-500">₹{trip.total_fuel_cost?.toFixed(0)}</div>
+                          </td>
+                          <td className="px-5 py-3.5">
+                            <span className={`inline-flex items-center px-2.5 py-1 rounded-lg text-xs font-medium ${
+                              (trip.mileage || 0) > 12 ? 'bg-emerald-500/10 text-emerald-400' :
+                              (trip.mileage || 0) > 8 ? 'bg-amber-500/10 text-amber-400' :
+                              'bg-red-500/10 text-red-400'
+                            }`}>
+                              {trip.mileage?.toFixed(1)} km/L
+                            </span>
+                          </td>
+                          <td className="px-5 py-3.5 text-sm text-zinc-400">
+                            {trip.duration_minutes ? formatDuration(trip.duration_minutes) : '-'}
+                          </td>
+                          <td className="px-5 py-3.5">
+                            <div className="flex gap-1.5">
+                              {trip.starting_km_image && (
+                                <a href={trip.starting_km_image} target="_blank" rel="noreferrer" className="p-1.5 hover:bg-zinc-800 rounded-lg" title="View Initial KM Odometer">
+                                  <ImageIcon className="w-3.5 h-3.5 text-zinc-500 hover:text-white" />
+                                </a>
+                              )}
+                              {trip.final_km_image && (
+                                <a href={trip.final_km_image} target="_blank" rel="noreferrer" className="p-1.5 hover:bg-zinc-800 rounded-lg" title="View Closing KM Odometer">
+                                  <ImageIcon className="w-3.5 h-3.5 text-zinc-500 hover:text-white" />
+                                </a>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                  
+                  {completedTrips.length === 0 && (
+                    <div className="py-16 text-center text-zinc-600">
+                      <Truck className="w-12 h-12 mx-auto mb-3 opacity-20" />
+                      <p>Database table is currently unpopulated</p>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </>
           )}
 
           {adminTab === 'drivers' && (
             <div className="grid lg:grid-cols-3 gap-6">
-              {/* Create Driver Form */}
+              {/* Comprehensive Upgraded Driver Registration Module */}
               <div className="lg:col-span-1">
                 <div className="bg-zinc-900/50 border border-zinc-800 rounded-2xl p-5 sticky top-24">
                   <h3 className="font-semibold mb-1 flex items-center gap-2">
                     <Plus className="w-4 h-4 text-violet-400" />
-                    Create New Driver
+                    Register Fleet Crew
                   </h3>
-                  <p className="text-xs text-zinc-500 mb-5">Admin creates login credentials</p>
+                  <p className="text-xs text-zinc-500 mb-5">Provide secure driver & vehicle profiles</p>
                   
                   <div className="space-y-4">
                     <div>
-                      <label className="text-xs text-zinc-500 mb-1.5 block">Mobile Number *</label>
+                      <label className="text-xs text-zinc-400 mb-1.5 block">Driver Full Name *</label>
+                      <input
+                        type="text"
+                        value={newDriverName}
+                        onChange={(e) => setNewDriverName(e.target.value)}
+                        placeholder="John Doe"
+                        className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:border-violet-500/50"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="text-xs text-zinc-400 mb-1.5 block">Driver Login Phone Number *</label>
                       <input
                         type="tel"
                         value={newDriverMobile}
                         onChange={(e) => setNewDriverMobile(e.target.value)}
-                        placeholder="10 digits"
+                        placeholder="10-digit number"
                         maxLength={10}
                         className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:border-violet-500/50"
                       />
                     </div>
                     
                     <div>
-                      <label className="text-xs text-zinc-500 mb-1.5 block">Driver Name *</label>
-                      <input
-                        type="text"
-                        value={newDriverName}
-                        onChange={(e) => setNewDriverName(e.target.value)}
-                        placeholder="Full name"
-                        className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:border-violet-500/50"
-                      />
-                    </div>
-                    
-                    <div>
-                      <label className="text-xs text-zinc-500 mb-1.5 block">Password *</label>
+                      <label className="text-xs text-zinc-400 mb-1.5 block">Secure Login Password *</label>
                       <input
                         type="text"
                         value={newDriverPassword}
                         onChange={(e) => setNewDriverPassword(e.target.value)}
-                        placeholder="Set password"
+                        placeholder="Password string"
                         className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:border-violet-500/50"
                       />
                     </div>
                     
                     <div>
-                      <label className="text-xs text-zinc-500 mb-1.5 block">Assign Vehicle</label>
+                      <label className="text-xs text-zinc-400 mb-1.5 block">Vehicle Name / Model</label>
+                      <input
+                        type="text"
+                        value={newVehicleName}
+                        onChange={(e) => setNewVehicleName(e.target.value)}
+                        placeholder="BharatBenz 3523R / Tata Ace"
+                        className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:border-violet-500/50"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="text-xs text-zinc-400 mb-1.5 block">Vehicle License Number *</label>
+                      <input
+                        type="text"
+                        value={newVehicleNumber}
+                        onChange={(e) => setNewVehicleNumber(e.target.value)}
+                        placeholder="TS-09-EX-1234"
+                        className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3.5 py-2.5 text-sm font-mono text-cyan-400 focus:outline-none focus:border-violet-500/50"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="text-xs text-zinc-400 mb-1.5 block">Vehicle Body Type</label>
                       <select
-                        value={newDriverVehicle}
-                        onChange={(e) => setNewDriverVehicle(e.target.value)}
+                        value={newVehicleType}
+                        onChange={(e) => setNewVehicleType(e.target.value)}
                         className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:border-violet-500/50"
                       >
-                        <option value="">No assignment</option>
-                        {vehicles.map(v => (
-                          <option key={v.id} value={v.vehicle_number}>{v.vehicle_number} • {v.model}</option>
-                        ))}
+                        <option value="Truck">Truck Carrier</option>
+                        <option value="Auto">Auto Tipper</option>
+                        <option value="Container">Container Trailer</option>
                       </select>
                     </div>
 
                     <button
                       onClick={createDriver}
-                      disabled={loading || !newDriverMobile || !newDriverName || !newDriverPassword}
-                      className="w-full bg-violet-600 hover:bg-violet-500 disabled:opacity-50 text-white font-medium rounded-xl py-2.5 text-sm transition-colors"
+                      disabled={loading || !newDriverMobile || !newDriverName || !newDriverPassword || !newVehicleNumber}
+                      className="w-full bg-violet-600 hover:bg-violet-500 disabled:opacity-40 text-white font-medium rounded-xl py-2.5 text-sm transition-colors mt-2"
                     >
-                      {loading ? 'Creating...' : 'Create Driver Account'}
+                      {loading ? 'Publishing Profile...' : 'Authorize and Create Account'}
                     </button>
 
-                    <div className="pt-4 border-t border-zinc-800">
+                    <div className="pt-3 border-t border-zinc-800">
                       <div className="flex items-start gap-2 text-[11px] text-zinc-500">
-                        <Key className="w-3.5 h-3.5 mt-0.5 shrink-0" />
-                        <p>Driver will login with mobile number and the password you set. No OTP required.</p>
+                        <Key className="w-3.5 h-3.5 mt-0.5 shrink-0 text-amber-500" />
+                        <p>Credentials validate automatically on the login panel bypassing external third-party mobile SMS gatekeepers.</p>
                       </div>
                     </div>
                   </div>
                 </div>
               </div>
 
-              {/* Drivers List */}
+              {/* Live Registered Drivers Overview */}
               <div className="lg:col-span-2">
                 <div className="bg-zinc-900/50 border border-zinc-800 rounded-2xl overflow-hidden">
                   <div className="px-5 py-4 border-b border-zinc-800">
-                    <h3 className="font-semibold">All Drivers ({drivers.filter(d => d.mobile !== '9999999999').length})</h3>
+                    <h3 className="font-semibold">Registered Operators ({drivers.filter(d => d.mobile !== '9492911408' && d.mobile !== '9999999999').length})</h3>
                   </div>
                   
                   <div className="divide-y divide-zinc-800/50">
-                    {drivers.filter(d => d.mobile !== '9999999999').map((driver) => {
+                    {drivers.filter(d => d.mobile !== '9492911408' && d.mobile !== '9999999999').map((driver) => {
                       const driverTrips = trips.filter(t => t.driver_id === driver.id);
                       const completed = driverTrips.filter(t => t.status === 'completed');
                       
@@ -829,30 +873,33 @@ export default function App() {
                           <div className="flex items-start justify-between">
                             <div className="flex gap-3.5">
                               <div className="w-10 h-10 rounded-xl bg-zinc-800 flex items-center justify-center shrink-0">
-                                <User className="w-5 h-5 text-zinc-600" />
+                                <User className="w-5 h-5 text-zinc-500" />
                               </div>
                               <div>
-                                <div className="font-medium">{driver.name}</div>
-                                <div className="text-sm text-zinc-500 mt-0.5 flex items-center gap-3">
-                                  <span className="font-mono">{driver.mobile}</span>
-                                  {driver.vehicle_assigned && (
-                                    <span className="flex items-center gap-1">
-                                      <Truck className="w-3 h-3" />
-                                      {driver.vehicle_assigned}
+                                <div className="font-medium text-base">{driver.name}</div>
+                                <div className="text-sm text-zinc-500 mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-1">
+                                  <span className="font-mono text-zinc-400">Mobile: {driver.mobile}</span>
+                                  {(driver.vehicle_number || driver.vehicle_assigned) && (
+                                    <span className="flex items-center gap-1 text-cyan-400 font-mono">
+                                      <Truck className="w-3 h-3 text-zinc-500" />
+                                      {driver.vehicle_number || driver.vehicle_assigned} {driver.vehicle_name ? `(${driver.vehicle_name})` : ''}
                                     </span>
                                   )}
+                                  {driver.vehicle_type && (
+                                    <span className="text-xs px-2 py-0.5 rounded bg-zinc-800 text-zinc-400">{driver.vehicle_type}</span>
+                                  )}
                                 </div>
-                                <div className="flex items-center gap-4 mt-2.5">
+                                <div className="flex items-center gap-5 mt-3">
                                   <div>
-                                    <div className="text-[11px] text-zinc-600">Total Trips</div>
-                                    <div className="text-sm font-medium">{completed.length}</div>
+                                    <div className="text-[10px] text-zinc-500 uppercase tracking-wide">Trips</div>
+                                    <div className="text-sm font-medium text-zinc-300">{completed.length}</div>
                                   </div>
                                   <div>
-                                    <div className="text-[11px] text-zinc-600">Total KM</div>
-                                    <div className="text-sm font-medium">{Math.round(completed.reduce((s, t) => s + (t.total_distance || 0), 0))}</div>
+                                    <div className="text-[10px] text-zinc-500 uppercase tracking-wide">Total KM</div>
+                                    <div className="text-sm font-medium text-zinc-300">{Math.round(completed.reduce((s, t) => s + (t.total_distance || 0), 0))}</div>
                                   </div>
                                   <div>
-                                    <div className="text-[11px] text-zinc-600">Avg Mileage</div>
+                                    <div className="text-[10px] text-zinc-500 uppercase tracking-wide">Fuel Mileage</div>
                                     <div className="text-sm font-medium text-emerald-400">
                                       {completed.length > 0 ? (completed.reduce((s, t) => s + (t.mileage || 0), 0) / completed.length).toFixed(1) : '0'} km/L
                                     </div>
@@ -861,12 +908,9 @@ export default function App() {
                               </div>
                             </div>
                             <div className="text-right">
-                              <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-emerald-500/10 border border-emerald-500/20">
-                                <div className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
-                                <span className="text-[11px] text-emerald-400 font-medium">Active</span>
-                              </div>
-                              <div className="text-[11px] text-zinc-600 mt-1.5">
-                                Login: {driver.mobile}
+                              <div className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-emerald-500/10 border border-emerald-500/20">
+                                <div className="w-1 h-1 rounded-full bg-emerald-400" />
+                                <span className="text-[10px] text-emerald-400 font-medium">Synced</span>
                               </div>
                             </div>
                           </div>
@@ -874,26 +918,13 @@ export default function App() {
                       );
                     })}
                     
-                    {drivers.filter(d => d.mobile !== '9999999999').length === 0 && (
+                    {drivers.filter(d => d.mobile !== '9492911408' && d.mobile !== '9999999999').length === 0 && (
                       <div className="py-16 text-center text-zinc-600">
                         <Users className="w-12 h-12 mx-auto mb-3 opacity-20" />
-                        <p>No drivers yet</p>
-                        <p className="text-xs mt-1">Create your first driver account</p>
+                        <p>No drivers configured in database yet</p>
                       </div>
                     )}
                   </div>
-                </div>
-
-                {/* Instructions */}
-                <div className="mt-4 bg-amber-500/5 border border-amber-500/20 rounded-2xl p-4">
-                  <h4 className="text-sm font-medium text-amber-400 mb-2">How it works</h4>
-                  <ol className="text-xs text-zinc-400 space-y-1.5 list-decimal list-inside">
-                    <li>Create driver with mobile number and password (you set both)</li>
-                    <li>Share credentials with driver - they login directly, no OTP</li>
-                    <li>Driver can start trips, log fuel, and complete journeys</li>
-                    <li>All data auto-captures GPS and timestamps for fraud prevention</li>
-                    <li>View reports in Dashboard tab</li>
-                  </ol>
                 </div>
               </div>
             </div>
@@ -903,12 +934,12 @@ export default function App() {
     );
   }
 
-  // DRIVER VIEW
+  // STANDARD DRIVER TELEMETRY WORKFLOW INTERFACE
   return (
-    <div className="min-h-screen bg-[#0B0F19] text-white flex flex-col max-w-lg mx-auto relative">
+    <div className="min-h-screen bg-[#0B0F19] text-white flex flex-col max-w-lg mx-auto relative border-x border-zinc-900 shadow-2xl">
       <input ref={fileInputRef} type="file" accept="image/*" capture="environment" onChange={handleFileChange} className="hidden" />
       
-      {/* Header */}
+      {/* Header Profile Status Row */}
       <header className="sticky top-0 z-30 backdrop-blur-2xl bg-[#0B0F19]/70 border-b border-zinc-900">
         <div className="px-4 h-14 flex items-center justify-between">
           <div className="flex items-center gap-2.5">
@@ -916,7 +947,7 @@ export default function App() {
               <Truck className="w-4.5 h-4.5" />
             </div>
             <div>
-              <div className="text-[11px] text-zinc-500 leading-none">Driver</div>
+              <div className="text-[11px] text-zinc-500 leading-none">Driver Identity</div>
               <div className="font-medium text-sm -mt-0.5">{user?.name}</div>
             </div>
           </div>
@@ -924,14 +955,11 @@ export default function App() {
             {gps && (
               <div className="flex items-center gap-1 px-2 py-1 rounded-lg bg-emerald-500/10 border border-emerald-500/20">
                 <div className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                <span className="text-[10px] text-emerald-400 font-medium">GPS</span>
+                <span className="text-[10px] text-emerald-400 font-medium">GPS LOCK</span>
               </div>
             )}
-            <button onClick={() => setShowAdmin(true)} className="p-2 hover:bg-zinc-900 rounded-xl">
-              <BarChart3 className="w-4.5 h-4.5 text-zinc-500" />
-            </button>
-            <button onClick={logout} className="p-2 hover:bg-zinc-900 rounded-xl">
-              <LogOut className="w-4.5 h-4.5 text-zinc-500" />
+            <button onClick={logout} className="p-2 hover:bg-zinc-900 rounded-xl" title="Exit App">
+              <LogOut className="w-4.5 h-4.5 text-zinc-500 hover:text-red-400" />
             </button>
           </div>
         </div>
@@ -939,7 +967,7 @@ export default function App() {
 
       <main className="flex-1 px-4 py-5 pb-24">
         <AnimatePresence mode="wait">
-          {/* HOME SCREEN */}
+          {/* HOME COMPONENT VIEW */}
           {currentScreen === 'home' && (
             <motion.div
               key="home"
@@ -950,20 +978,20 @@ export default function App() {
             >
               {activeTrip ? (
                 <>
-                  {/* Active Trip Card */}
+                  {/* Current Active Manifest Metrics */}
                   <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-emerald-600/20 to-cyan-600/20 border border-emerald-500/20 p-[1px]">
                     <div className="rounded-3xl bg-zinc-950 p-5">
                       <div className="flex items-start justify-between mb-4">
                         <div>
                           <div className="flex items-center gap-2 mb-1">
                             <div className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-                            <span className="text-xs font-medium text-emerald-400 uppercase tracking-wider">Active Trip</span>
+                            <span className="text-xs font-medium text-emerald-400 uppercase tracking-wider">Active Run</span>
                           </div>
                           <h2 className="text-xl font-semibold">{activeTrip.destination_name}</h2>
-                          <p className="text-sm text-zinc-500 mt-0.5">{activeTrip.vehicle_number}</p>
+                          <p className="text-sm text-zinc-500 mt-0.5 font-mono text-cyan-400">{activeTrip.vehicle_number}</p>
                         </div>
                         <div className="text-right">
-                          <div className="text-[11px] text-zinc-600">Started</div>
+                          <div className="text-[11px] text-zinc-600">Dispatched</div>
                           <div className="text-sm font-medium">{new Date(activeTrip.start_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</div>
                         </div>
                       </div>
@@ -971,12 +999,12 @@ export default function App() {
                       <div className="grid grid-cols-3 gap-3">
                         <div className="bg-zinc-900/50 rounded-2xl p-3 border border-zinc-800/50">
                           <Gauge className="w-4 h-4 text-zinc-600 mb-1.5" />
-                          <div className="text-[11px] text-zinc-500">Start KM</div>
+                          <div className="text-[11px] text-zinc-500">Initial KM</div>
                           <div className="font-semibold">{activeTrip.starting_km}</div>
                         </div>
                         <div className="bg-zinc-900/50 rounded-2xl p-3 border border-zinc-800/50">
                           <Fuel className="w-4 h-4 text-zinc-600 mb-1.5" />
-                          <div className="text-[11px] text-zinc-500">Fuel Stops</div>
+                          <div className="text-[11px] text-zinc-500">Fuel Entries</div>
                           <div className="font-semibold">{fuelLogs.length}</div>
                         </div>
                         <div className="bg-zinc-900/50 rounded-2xl p-3 border border-zinc-800/50">
@@ -988,7 +1016,7 @@ export default function App() {
                     </div>
                   </div>
 
-                  {/* Active Rest Banner */}
+                  {/* Operational Rest Sub-Banner */}
                   {activeRest && (
                     <div className="relative overflow-hidden rounded-2xl bg-gradient-to-r from-orange-600/20 to-red-600/20 border border-orange-500/30 p-[1px]">
                       <div className="rounded-2xl bg-zinc-950 p-4">
@@ -998,8 +1026,8 @@ export default function App() {
                               <Pause className="w-5 h-5 text-orange-400" />
                             </div>
                             <div>
-                              <div className="text-xs font-medium text-orange-400 uppercase tracking-wider">On Rest Break</div>
-                              <div className="text-sm mt-0.5">Started {new Date(activeRest.start_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</div>
+                              <div className="text-xs font-medium text-orange-400 uppercase tracking-wider">Rest Stop Active</div>
+                              <div className="text-sm mt-0.5">Clocked {new Date(activeRest.start_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</div>
                               {activeRest.location_name && (
                                 <div className="text-xs text-zinc-500">{activeRest.location_name}</div>
                               )}
@@ -1010,16 +1038,15 @@ export default function App() {
                             disabled={loading}
                             className="px-4 py-2 rounded-xl bg-orange-600 hover:bg-orange-500 text-white text-sm font-medium transition-colors"
                           >
-                            Resume
+                            Resume Trip
                           </button>
                         </div>
                       </div>
                     </div>
                   )}
 
-                  {/* Action Buttons */}
+                  {/* Standard Driver Layout Functional Navigation Grid */}
                   <div className="space-y-3">
-                    {/* Rest Button */}
                     {!activeRest ? (
                       <button
                         onClick={() => setCurrentScreen('rest')}
@@ -1031,7 +1058,7 @@ export default function App() {
                           </div>
                           <div className="flex-1 text-left">
                             <div className="font-medium">Take Rest Break</div>
-                            <div className="text-xs text-zinc-500 mt-0.5">Log rest stop • Auto tracks duration</div>
+                            <div className="text-xs text-zinc-500 mt-0.5">Halt tracking interval • Logs location profiles</div>
                           </div>
                         </div>
                       </button>
@@ -1047,7 +1074,7 @@ export default function App() {
                         </div>
                         <div className="flex-1 text-left">
                           <div className="font-medium">Add Fuel Entry</div>
-                          <div className="text-xs text-zinc-500 mt-0.5">Log refill with bill photo • GPS auto-captured</div>
+                          <div className="text-xs text-zinc-500 mt-0.5">Submit refill receipt data with camera capture verification</div>
                         </div>
                       </div>
                     </button>
@@ -1063,7 +1090,7 @@ export default function App() {
                           </div>
                           <div className="flex-1 text-left">
                             <div className="font-medium">Destination Reached</div>
-                            <div className="text-xs text-zinc-500 mt-0.5">Log arrival KM and time</div>
+                            <div className="text-xs text-zinc-500 mt-0.5">Log arrival odometer reading at target checkpoint</div>
                           </div>
                         </div>
                       </button>
@@ -1078,113 +1105,38 @@ export default function App() {
                               <Home className="w-6 h-6 text-violet-400" />
                             </div>
                             <div className="flex-1 text-left">
-                              <div className="font-medium">Return to Station</div>
-                              <div className="text-xs text-zinc-500 mt-0.5">End trip & calculate mileage</div>
+                              <div className="font-medium">Return to Station Base</div>
+                              <div className="text-xs text-zinc-500 mt-0.5">Close active loop manifest and analyze efficiency</div>
                             </div>
                           </div>
                         </div>
                       </button>
                     )}
                   </div>
-
-                  {/* Rest Logs */}
-                  {restLogs.length > 0 && (
-                    <div className="bg-zinc-900/50 border border-zinc-800 rounded-2xl p-4">
-                      <h3 className="text-sm font-medium mb-3 flex items-center gap-2">
-                        <Pause className="w-4 h-4 text-zinc-600" />
-                        Rest Breaks ({restLogs.length})
-                      </h3>
-                      <div className="space-y-2.5">
-                        {restLogs.map((rest) => (
-                          <div key={rest.id} className="flex items-center justify-between py-2 border-b border-zinc-800/50 last:border-0">
-                            <div>
-                              <div className="text-sm font-medium">
-                                {rest.duration_minutes ? `${Math.floor(rest.duration_minutes / 60)}h ${rest.duration_minutes % 60}m` : 'In progress'}
-                              </div>
-                              <div className="text-[11px] text-zinc-500">
-                                {rest.location_name || 'Rest stop'} • {new Date(rest.start_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                                {rest.end_time && ` - ${new Date(rest.end_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`}
-                              </div>
-                            </div>
-                            <div className={`w-2 h-2 rounded-full ${rest.end_time ? 'bg-zinc-600' : 'bg-orange-400 animate-pulse'}`} />
-                          </div>
-                        ))}
-                      </div>
-                      <div className="mt-3 pt-3 border-t border-zinc-800/50 text-[11px] text-zinc-500">
-                        Total rest: {Math.floor(restLogs.reduce((s, r) => s + (r.duration_minutes || 0), 0) / 60)}h {restLogs.reduce((s, r) => s + (r.duration_minutes || 0), 0) % 60}m
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Fuel Logs */}
-                  {fuelLogs.length > 0 && (
-                    <div className="bg-zinc-900/50 border border-zinc-800 rounded-2xl p-4">
-                      <h3 className="text-sm font-medium mb-3 flex items-center gap-2">
-                        <FileText className="w-4 h-4 text-zinc-600" />
-                        Fuel History
-                      </h3>
-                      <div className="space-y-2.5">
-                        {fuelLogs.map((log) => (
-                          <div key={log.id} className="flex items-center justify-between py-2 border-b border-zinc-800/50 last:border-0">
-                            <div>
-                              <div className="text-sm font-medium">{log.fuel_quantity} L • ₹{log.fuel_amount}</div>
-                              <div className="text-[11px] text-zinc-500">{log.fuel_station_name} • {log.current_km} km</div>
-                            </div>
-                            <div className="text-[11px] text-zinc-600">
-                              {new Date(log.log_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
                 </>
               ) : (
                 <>
-                  {/* No Active Trip */}
+                  {/* Standby State Display */}
                   <div className="text-center py-12">
                     <div className="w-20 h-20 mx-auto rounded-3xl bg-zinc-900 border border-zinc-800 flex items-center justify-center mb-4">
                       <Play className="w-10 h-10 text-zinc-700" />
                     </div>
-                    <h2 className="text-xl font-semibold mb-2">No Active Trip</h2>
-                    <p className="text-sm text-zinc-500 mb-6 max-w-[280px] mx-auto">Start a new trip to begin tracking mileage and fuel automatically</p>
+                    <h2 className="text-xl font-semibold mb-2">System Standing By</h2>
+                    <p className="text-sm text-zinc-500 mb-6 max-w-[280px] mx-auto">Initialize a manifest sequence to start recording fleet parameters</p>
                     <button
                       onClick={() => setCurrentScreen('start')}
                       className="inline-flex items-center gap-2 px-6 py-3 rounded-2xl bg-white text-black font-medium hover:bg-zinc-200 transition-colors"
                     >
                       <Play className="w-4 h-4" />
-                      Start New Trip
+                      Initialize Route Run
                     </button>
                   </div>
-
-                  {/* Recent Trips */}
-                  {trips.filter(t => t.driver_id === user?.id).length > 0 && (
-                    <div className="bg-zinc-900/50 border border-zinc-800 rounded-2xl p-4">
-                      <h3 className="text-sm font-medium mb-3">Recent Trips</h3>
-                      <div className="space-y-2.5">
-                        {trips.filter(t => t.driver_id === user?.id).slice(0, 3).map((trip) => (
-                          <div key={trip.id} className="flex items-center justify-between">
-                            <div>
-                              <div className="text-sm">{trip.destination_name}</div>
-                              <div className="text-[11px] text-zinc-500">{new Date(trip.start_time).toLocaleDateString()} • {trip.vehicle_number}</div>
-                            </div>
-                            {trip.status === 'completed' && (
-                              <div className="text-right">
-                                <div className="text-sm font-medium text-emerald-400">{trip.mileage?.toFixed(1)} km/L</div>
-                                <div className="text-[11px] text-zinc-500">{trip.total_distance?.toFixed(0)} km</div>
-                              </div>
-                            )}
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
                 </>
               )}
             </motion.div>
           )}
 
-          {/* START TRIP SCREEN */}
+          {/* TRIP COMMENCEMENT PROFILE LAYOUT */}
           {currentScreen === 'start' && (
             <motion.div
               key="start"
@@ -1197,20 +1149,20 @@ export default function App() {
                   <ArrowLeft className="w-5 h-5" />
                 </button>
                 <div>
-                  <h2 className="text-xl font-semibold">Start Trip</h2>
-                  <p className="text-xs text-zinc-500">GPS & time auto-captured</p>
+                  <h2 className="text-xl font-semibold">Start Route Tracking</h2>
+                  <p className="text-xs text-zinc-500">Security parameters active</p>
                 </div>
               </div>
 
               <div className="space-y-4">
                 <div>
-                  <label className="text-xs text-zinc-500 mb-1.5 block">Vehicle</label>
+                  <label className="text-xs text-zinc-500 mb-1.5 block">Select Truck/Auto/Container ID</label>
                   <select
                     value={selectedVehicle?.id || ''}
                     onChange={(e) => setSelectedVehicle(vehicles.find(v => v.id === Number(e.target.value)) || null)}
                     className="w-full bg-zinc-900 border border-zinc-800 rounded-2xl px-4 py-3.5 text-white focus:outline-none focus:border-emerald-500/50"
                   >
-                    <option value="">Select vehicle</option>
+                    <option value="">Select vehicle reference</option>
                     {vehicles.map(v => (
                       <option key={v.id} value={v.id}>{v.vehicle_number} • {v.model}</option>
                     ))}
@@ -1218,35 +1170,35 @@ export default function App() {
                 </div>
 
                 <div>
-                  <label className="text-xs text-zinc-500 mb-1.5 block">Destination</label>
+                  <label className="text-xs text-zinc-500 mb-1.5 block">Route Destination Name</label>
                   <div className="relative">
                     <MapPin className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4.5 h-4.5 text-zinc-600" />
                     <input
                       type="text"
                       value={destination}
                       onChange={(e) => setDestination(e.target.value)}
-                      placeholder="Enter destination name"
+                      placeholder="e.g. Warehouse B Terminal"
                       className="w-full bg-zinc-900 border border-zinc-800 rounded-2xl pl-10 pr-4 py-3.5 focus:outline-none focus:border-emerald-500/50"
                     />
                   </div>
                 </div>
 
                 <div>
-                  <label className="text-xs text-zinc-500 mb-1.5 block">Starting KM Reading</label>
+                  <label className="text-xs text-zinc-500 mb-1.5 block">Starting Odometer KM Reading</label>
                   <div className="relative">
                     <Gauge className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4.5 h-4.5 text-zinc-600" />
                     <input
                       type="number"
                       value={startingKm}
                       onChange={(e) => setStartingKm(e.target.value)}
-                      placeholder="Odometer reading"
+                      placeholder="Current dashboard mileage"
                       className="w-full bg-zinc-900 border border-zinc-800 rounded-2xl pl-10 pr-4 py-3.5 focus:outline-none focus:border-emerald-500/50"
                     />
                   </div>
                 </div>
 
                 <div>
-                  <label className="text-xs text-zinc-500 mb-1.5 block">KM Meter Photo (Required for fraud prevention)</label>
+                  <label className="text-xs text-zinc-500 mb-1.5 block">Dashboard KM Meter Camera Proof *</label>
                   <button
                     type="button"
                     onClick={() => handleImageCapture('start')}
@@ -1254,47 +1206,34 @@ export default function App() {
                   >
                     {startingKmImage ? (
                       <div className="flex items-center gap-3">
-                        <img src={startingKmImage} alt="KM" className="w-16 h-12 object-cover rounded-xl" />
+                        <img src={startingKmImage} alt="Odometer" className="w-16 h-12 object-cover rounded-xl" />
                         <div className="text-left">
-                          <div className="text-sm font-medium text-emerald-400">Photo captured</div>
-                          <div className="text-xs text-zinc-500">Tap to retake</div>
+                          <div className="text-sm font-medium text-emerald-400">Odometer file verified</div>
+                          <div className="text-xs text-zinc-500">Tap to cycle camera</div>
                         </div>
                         <CheckCircle2 className="w-5 h-5 text-emerald-400 ml-auto" />
                       </div>
                     ) : (
                       <div className="flex items-center justify-center gap-2.5 py-2">
                         <Camera className="w-5 h-5 text-zinc-600" />
-                        <span className="text-zinc-400">Tap to capture odometer</span>
+                        <span className="text-zinc-400">Trigger snapshot authentication</span>
                       </div>
                     )}
                   </button>
                 </div>
 
-                <div className="bg-amber-500/5 border border-amber-500/20 rounded-2xl p-3.5 mt-6">
-                  <div className="flex gap-2.5">
-                    <Navigation className="w-4 h-4 text-amber-400 mt-0.5 shrink-0" />
-                    <div>
-                      <div className="text-xs font-medium text-amber-400 mb-1">Auto-captured data</div>
-                      <div className="text-[11px] text-zinc-500 leading-relaxed">
-                        Start time: {new Date().toLocaleString()}<br />
-                        GPS: {gps ? `${gps.lat.toFixed(4)}, ${gps.lng.toFixed(4)}` : 'Acquiring...'}
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
                 <button
                   onClick={startTrip}
                   disabled={loading || !selectedVehicle || !destination || !startingKm || !startingKmImage}
-                  className="w-full bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 disabled:cursor-not-allowed text-white font-medium rounded-2xl py-3.5 mt-2 transition-colors"
+                  className="w-full bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 disabled:cursor-not-allowed text-white font-medium rounded-2xl py-3.5 mt-2 transition-colors"
                 >
-                  {loading ? 'Starting...' : 'Start Trip • Lock GPS & Time'}
+                  {loading ? 'Locking Parameters...' : 'Deploy Route Run'}
                 </button>
               </div>
             </motion.div>
           )}
 
-          {/* FUEL ENTRY SCREEN */}
+          {/* FUEL LOGGING PANEL COMPONENT */}
           {currentScreen === 'fuel' && (
             <motion.div
               key="fuel"
@@ -1307,33 +1246,33 @@ export default function App() {
                   <ArrowLeft className="w-5 h-5" />
                 </button>
                 <div>
-                  <h2 className="text-xl font-semibold">Fuel Entry</h2>
-                  <p className="text-xs text-zinc-500">Trip #{activeTrip?.id} • {activeTrip?.vehicle_number}</p>
+                  <h2 className="text-xl font-semibold">Log Fuel Refill</h2>
+                  <p className="text-xs text-zinc-500">Vehicle link: {activeTrip?.vehicle_number}</p>
                 </div>
               </div>
 
               <div className="space-y-4">
                 <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <label className="text-xs text-zinc-500 mb-1.5 block">Quantity (Liters)</label>
+                    <label className="text-xs text-zinc-500 mb-1.5 block">Refuel Quantity (Liters)</label>
                     <input
                       type="number"
                       step="0.1"
                       value={fuelQuantity}
                       onChange={(e) => setFuelQuantity(e.target.value)}
-                      placeholder="0.0"
+                      placeholder="0.00"
                       className="w-full bg-zinc-900 border border-zinc-800 rounded-2xl px-4 py-3.5 text-xl font-medium focus:outline-none focus:border-amber-500/50"
                     />
                   </div>
                   <div>
-                    <label className="text-xs text-zinc-500 mb-1.5 block">Amount (₹)</label>
+                    <label className="text-xs text-zinc-500 mb-1.5 block">Total Cash/Slip Cost (₹)</label>
                     <div className="relative">
                       <IndianRupee className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-600" />
                       <input
                         type="number"
                         value={fuelAmount}
                         onChange={(e) => setFuelAmount(e.target.value)}
-                        placeholder="0"
+                        placeholder="0000"
                         className="w-full bg-zinc-900 border border-zinc-800 rounded-2xl pl-9 pr-4 py-3.5 text-xl font-medium focus:outline-none focus:border-amber-500/50"
                       />
                     </div>
@@ -1341,29 +1280,29 @@ export default function App() {
                 </div>
 
                 <div>
-                  <label className="text-xs text-zinc-500 mb-1.5 block">Current KM Reading</label>
+                  <label className="text-xs text-zinc-500 mb-1.5 block">Odometer KM at Refill Station</label>
                   <input
                     type="number"
                     value={currentKm}
                     onChange={(e) => setCurrentKm(e.target.value)}
-                    placeholder="Odometer now"
+                    placeholder="Odometer metrics"
                     className="w-full bg-zinc-900 border border-zinc-800 rounded-2xl px-4 py-3.5 focus:outline-none focus:border-amber-500/50"
                   />
                 </div>
 
                 <div>
-                  <label className="text-xs text-zinc-500 mb-1.5 block">Fuel Station</label>
+                  <label className="text-xs text-zinc-500 mb-1.5 block">Vendor Retail Station Station Name</label>
                   <input
                     type="text"
                     value={fuelStation}
                     onChange={(e) => setFuelStation(e.target.value)}
-                    placeholder="HP, Indian Oil, etc."
+                    placeholder="HP Petrol Pump / Indian Oil Station"
                     className="w-full bg-zinc-900 border border-zinc-800 rounded-2xl px-4 py-3.5 focus:outline-none focus:border-amber-500/50"
                   />
                 </div>
 
                 <div>
-                  <label className="text-xs text-zinc-500 mb-1.5 block">Fuel Bill Photo</label>
+                  <label className="text-xs text-zinc-500 mb-1.5 block">Refuel Invoice Slip Photo</label>
                   <button
                     type="button"
                     onClick={() => handleImageCapture('fuel')}
@@ -1371,17 +1310,17 @@ export default function App() {
                   >
                     {fuelBillImage ? (
                       <div className="flex items-center gap-3">
-                        <img src={fuelBillImage} alt="Bill" className="w-16 h-12 object-cover rounded-xl" />
+                        <img src={fuelBillImage} alt="Bill receipt" className="w-16 h-12 object-cover rounded-xl" />
                         <div className="text-left">
-                          <div className="text-sm font-medium text-amber-400">Bill captured</div>
-                          <div className="text-xs text-zinc-500">Tap to retake</div>
+                          <div className="text-sm font-medium text-amber-400">Invoice uploaded</div>
+                          <div className="text-xs text-zinc-500">Tap to override photo</div>
                         </div>
                         <CheckCircle2 className="w-5 h-5 text-amber-400 ml-auto" />
                       </div>
                     ) : (
                       <div className="flex items-center justify-center gap-2.5 py-2">
                         <Camera className="w-5 h-5 text-zinc-600" />
-                        <span className="text-zinc-400">Capture bill for verification</span>
+                        <span className="text-zinc-400">Capture official fuel invoice slip</span>
                       </div>
                     )}
                   </button>
@@ -1390,15 +1329,15 @@ export default function App() {
                 <button
                   onClick={addFuel}
                   disabled={loading || !fuelQuantity || !fuelAmount || !currentKm}
-                  className="w-full bg-amber-600 hover:bg-amber-500 disabled:opacity-50 text-white font-medium rounded-2xl py-3.5 mt-2 transition-colors"
+                  className="w-full bg-amber-600 hover:bg-amber-500 disabled:opacity-40 text-white font-medium rounded-2xl py-3.5 mt-2 transition-colors"
                 >
-                  {loading ? 'Saving...' : 'Log Fuel • Auto GPS'}
+                  {loading ? 'Transmitting Data...' : 'Log Telemetry Entry'}
                 </button>
               </div>
             </motion.div>
           )}
 
-          {/* DESTINATION SCREEN */}
+          {/* CHECKPOINT DESTINATION ARRIVAL VIEW */}
           {currentScreen === 'destination' && (
             <motion.div
               key="destination"
@@ -1411,14 +1350,14 @@ export default function App() {
                   <ArrowLeft className="w-5 h-5" />
                 </button>
                 <div>
-                  <h2 className="text-xl font-semibold">Destination Reached</h2>
-                  <p className="text-xs text-zinc-500">Log arrival details</p>
+                  <h2 className="text-xl font-semibold">Arrived at Terminal Point</h2>
+                  <p className="text-xs text-zinc-500">Record matching coordinates</p>
                 </div>
               </div>
 
               <div className="space-y-4">
                 <div>
-                  <label className="text-xs text-zinc-500 mb-1.5 block">Destination Name</label>
+                  <label className="text-xs text-zinc-500 mb-1.5 block">Terminal Node Name</label>
                   <input
                     type="text"
                     value={destination || activeTrip?.destination_name || ''}
@@ -1428,18 +1367,18 @@ export default function App() {
                 </div>
 
                 <div>
-                  <label className="text-xs text-zinc-500 mb-1.5 block">Arrival KM Reading</label>
+                  <label className="text-xs text-zinc-500 mb-1.5 block">Arrival Odometer KM Metrics</label>
                   <input
                     type="number"
                     value={arrivalKm}
                     onChange={(e) => setArrivalKm(e.target.value)}
-                    placeholder="Odometer at destination"
+                    placeholder="Dashboard odometer reading"
                     className="w-full bg-zinc-900 border border-zinc-800 rounded-2xl px-4 py-3.5 text-xl font-medium focus:outline-none focus:border-cyan-500/50"
                   />
                 </div>
 
                 <div>
-                  <label className="text-xs text-zinc-500 mb-1.5 block">KM Meter Photo</label>
+                  <label className="text-xs text-zinc-500 mb-1.5 block">Odometer Gauge Snapshot</label>
                   <button
                     type="button"
                     onClick={() => handleImageCapture('arrival')}
@@ -1447,17 +1386,16 @@ export default function App() {
                   >
                     {arrivalKmImage ? (
                       <div className="flex items-center gap-3">
-                        <img src={arrivalKmImage} alt="KM" className="w-16 h-12 object-cover rounded-xl" />
+                        <img src={arrivalKmImage} alt="Arrival proof" className="w-16 h-12 object-cover rounded-xl" />
                         <div className="text-left">
-                          <div className="text-sm font-medium text-cyan-400">Photo captured</div>
-                          <div className="text-xs text-zinc-500">Tap to retake</div>
+                          <div className="text-sm font-medium text-cyan-400">Snapshot captured</div>
                         </div>
                         <CheckCircle2 className="w-5 h-5 text-cyan-400 ml-auto" />
                       </div>
                     ) : (
                       <div className="flex items-center justify-center gap-2.5 py-2">
                         <Camera className="w-5 h-5 text-zinc-600" />
-                        <span className="text-zinc-400">Capture odometer</span>
+                        <span className="text-zinc-400">Take verify snapshot</span>
                       </div>
                     )}
                   </button>
@@ -1466,15 +1404,15 @@ export default function App() {
                 <button
                   onClick={reachDestination}
                   disabled={loading || !arrivalKm}
-                  className="w-full bg-cyan-600 hover:bg-cyan-500 disabled:opacity-50 text-white font-medium rounded-2xl py-3.5 mt-2 transition-colors"
+                  className="w-full bg-cyan-600 hover:bg-cyan-500 disabled:opacity-40 text-white font-medium rounded-2xl py-3.5 mt-2 transition-colors"
                 >
-                  {loading ? 'Saving...' : 'Confirm Arrival'}
+                  {loading ? 'Recording Timestamp...' : 'Confirm Milestone Arrival'}
                 </button>
               </div>
             </motion.div>
           )}
 
-          {/* REST SCREEN */}
+          {/* ACTIVE BREAK PROTOCOL INTERFACE */}
           {currentScreen === 'rest' && (
             <motion.div
               key="rest"
@@ -1487,75 +1425,50 @@ export default function App() {
                   <ArrowLeft className="w-5 h-5" />
                 </button>
                 <div>
-                  <h2 className="text-xl font-semibold">Take Rest Break</h2>
-                  <p className="text-xs text-zinc-500">For long distance trips</p>
+                  <h2 className="text-xl font-semibold">Activate Break Protocol</h2>
+                  <p className="text-xs text-zinc-500">Fleet tracking holds automatically</p>
                 </div>
               </div>
 
               <div className="space-y-4">
-                <div className="bg-orange-500/5 border border-orange-500/20 rounded-2xl p-4">
-                  <div className="flex gap-3">
-                    <Pause className="w-5 h-5 text-orange-400 shrink-0 mt-0.5" />
-                    <div>
-                      <div className="text-sm font-medium text-orange-400 mb-1">Rest Timer</div>
-                      <div className="text-xs text-zinc-400 leading-relaxed">
-                        Tap "Start Rest" to begin tracking. GPS location and start time will be locked automatically. 
-                        When you resume driving, tap "Resume" on the home screen.
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
                 <div>
-                  <label className="text-xs text-zinc-500 mb-1.5 block">Location (Optional)</label>
+                  <label className="text-xs text-zinc-500 mb-1.5 block">Halt Landmark Point (Optional)</label>
                   <div className="relative">
                     <MapPin className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4.5 h-4.5 text-zinc-600" />
                     <input
                       type="text"
                       value={restLocation}
                       onChange={(e) => setRestLocation(e.target.value)}
-                      placeholder="e.g., Dhaba near Lonavala, Hotel"
+                      placeholder="e.g. Expressway Plaza Toll plaza"
                       className="w-full bg-zinc-900 border border-zinc-800 rounded-2xl pl-10 pr-4 py-3.5 focus:outline-none focus:border-orange-500/50"
                     />
                   </div>
                 </div>
 
                 <div>
-                  <label className="text-xs text-zinc-500 mb-1.5 block">Notes (Optional)</label>
+                  <label className="text-xs text-zinc-500 mb-1.5 block">Break Remarks/Notes (Optional)</label>
                   <textarea
                     value={restNotes}
                     onChange={(e) => setRestNotes(e.target.value)}
-                    placeholder="Meal break, overnight halt, etc."
+                    placeholder="Meal break or overnight driver sleep cycle"
                     rows={2}
                     className="w-full bg-zinc-900 border border-zinc-800 rounded-2xl px-4 py-3 focus:outline-none focus:border-orange-500/50 resize-none text-sm"
                   />
                 </div>
 
-                <div className="bg-zinc-900/50 border border-zinc-800 rounded-2xl p-3.5">
-                  <div className="flex gap-2.5">
-                    <Navigation className="w-4 h-4 text-zinc-500 mt-0.5 shrink-0" />
-                    <div>
-                      <div className="text-xs font-medium text-zinc-400 mb-1">Will auto-capture</div>
-                      <div className="text-[11px] text-zinc-500">
-                        Start: {new Date().toLocaleTimeString()} • GPS: {gps ? `${gps.lat.toFixed(4)}, ${gps.lng.toFixed(4)}` : '...' }
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
                 <button
                   onClick={startRest}
                   disabled={loading}
-                  className="w-full bg-orange-600 hover:bg-orange-500 disabled:opacity-50 text-white font-medium rounded-2xl py-3.5 transition-colors flex items-center justify-center gap-2"
+                  className="w-full bg-orange-600 hover:bg-orange-500 disabled:opacity-40 text-white font-medium rounded-2xl py-3.5 transition-colors flex items-center justify-center gap-2"
                 >
                   <Pause className="w-4 h-4" />
-                  {loading ? 'Starting...' : 'Start Rest • Lock Time & GPS'}
+                  {loading ? 'Suspending Manifest...' : 'Lock Position & Halt Run'}
                 </button>
               </div>
             </motion.div>
           )}
 
-          {/* END TRIP SCREEN */}
+          {/* CLOSING MANIFEST DISPATCH COMPONENT */}
           {currentScreen === 'end' && (
             <motion.div
               key="end"
@@ -1568,43 +1481,43 @@ export default function App() {
                   <ArrowLeft className="w-5 h-5" />
                 </button>
                 <div>
-                  <h2 className="text-xl font-semibold">Return to Station</h2>
-                  <p className="text-xs text-zinc-500">End trip & calculate mileage</p>
+                  <h2 className="text-xl font-semibold">Terminate Run Route</h2>
+                  <p className="text-xs text-zinc-500">Calculate fuel metrics parameters</p>
                 </div>
               </div>
 
               <div className="space-y-4">
                 <div className="bg-zinc-900/50 border border-zinc-800 rounded-2xl p-4">
-                  <h3 className="text-sm font-medium mb-3">Trip Summary</h3>
+                  <h3 className="text-xs font-medium uppercase text-zinc-400 mb-3 tracking-wider">Run Summary Telemetry</h3>
                   <div className="space-y-2 text-sm">
                     <div className="flex justify-between">
-                      <span className="text-zinc-500">Distance so far</span>
-                      <span className="font-medium">{activeTrip && arrivalKm ? (parseFloat(arrivalKm) - activeTrip.starting_km).toFixed(0) : '0'} km</span>
+                      <span className="text-zinc-500">Est. Vector Distance</span>
+                      <span className="font-mono text-cyan-400">{activeTrip && arrivalKm ? (parseFloat(arrivalKm) - activeTrip.starting_km).toFixed(0) : '0'} km</span>
                     </div>
                     <div className="flex justify-between">
-                      <span className="text-zinc-500">Fuel used</span>
-                      <span className="font-medium">{fuelLogs.reduce((s, l) => s + l.fuel_quantity, 0).toFixed(1)} L</span>
+                      <span className="text-zinc-500">Refuel Volume Quantified</span>
+                      <span className="font-mono text-zinc-300">{fuelLogs.reduce((s, l) => s + l.fuel_quantity, 0).toFixed(1)} L</span>
                     </div>
                     <div className="flex justify-between">
-                      <span className="text-zinc-500">Total cost</span>
-                      <span className="font-medium">₹{fuelLogs.reduce((s, l) => s + l.fuel_amount, 0).toFixed(0)}</span>
+                      <span className="text-zinc-500">Refuel Outlay Cumulative</span>
+                      <span className="font-mono text-amber-400">₹{fuelLogs.reduce((s, l) => s + l.fuel_amount, 0).toFixed(0)}</span>
                     </div>
                   </div>
                 </div>
 
                 <div>
-                  <label className="text-xs text-zinc-500 mb-1.5 block">Final KM Reading</label>
+                  <label className="text-xs text-zinc-500 mb-1.5 block">Final Return Base Odometer KM Reading</label>
                   <input
                     type="number"
                     value={finalKm}
                     onChange={(e) => setFinalKm(e.target.value)}
-                    placeholder="Odometer at base"
+                    placeholder="Dashboard gauge odometer metrics"
                     className="w-full bg-zinc-900 border border-zinc-800 rounded-2xl px-4 py-3.5 text-xl font-medium focus:outline-none focus:border-violet-500/50"
                   />
                 </div>
 
                 <div>
-                  <label className="text-xs text-zinc-500 mb-1.5 block">Final KM Photo</label>
+                  <label className="text-xs text-zinc-500 mb-1.5 block">Odometer Gauge Camera Photo Proof *</label>
                   <button
                     type="button"
                     onClick={() => handleImageCapture('final')}
@@ -1612,39 +1525,38 @@ export default function App() {
                   >
                     {finalKmImage ? (
                       <div className="flex items-center gap-3">
-                        <img src={finalKmImage} alt="KM" className="w-16 h-12 object-cover rounded-xl" />
+                        <img src={finalKmImage} alt="Final proof" className="w-16 h-12 object-cover rounded-xl" />
                         <div className="text-left">
-                          <div className="text-sm font-medium text-violet-400">Photo captured</div>
-                          <div className="text-xs text-zinc-500">Tap to retake</div>
+                          <div className="text-sm font-medium text-violet-400">Final proof verified</div>
                         </div>
                         <CheckCircle2 className="w-5 h-5 text-violet-400 ml-auto" />
                       </div>
                     ) : (
                       <div className="flex items-center justify-center gap-2.5 py-2">
                         <Camera className="w-5 h-5 text-zinc-600" />
-                        <span className="text-zinc-400">Capture final odometer</span>
+                        <span className="text-zinc-400">Snap closing odometer gauge</span>
                       </div>
                     )}
                   </button>
                 </div>
 
                 <div>
-                  <label className="text-xs text-zinc-500 mb-1.5 block">Notes (Optional)</label>
+                  <label className="text-xs text-zinc-500 mb-1.5 block">Trip Remarks / Closing Notes</label>
                   <textarea
                     value={notes}
                     onChange={(e) => setNotes(e.target.value)}
-                    placeholder="Any issues, delays, or remarks..."
+                    placeholder="Provide comments regarding route bottlenecks or vehicle mechanical delays..."
                     rows={3}
-                    className="w-full bg-zinc-900 border border-zinc-800 rounded-2xl px-4 py-3 focus:outline-none focus:border-violet-500/50 resize-none"
+                    className="w-full bg-zinc-900 border border-zinc-800 rounded-2xl px-4 py-3 focus:outline-none focus:border-violet-500/50 resize-none text-sm text-zinc-300"
                   />
                 </div>
 
                 <button
                   onClick={endTrip}
                   disabled={loading || !finalKm || !finalKmImage}
-                  className="w-full bg-gradient-to-r from-violet-600 to-fuchsia-600 hover:from-violet-500 hover:to-fuchsia-500 disabled:opacity-50 text-white font-medium rounded-2xl py-3.5 mt-2 transition-all"
+                  className="w-full bg-gradient-to-r from-violet-600 to-fuchsia-600 hover:from-violet-500 hover:to-fuchsia-500 disabled:opacity-40 text-white font-medium rounded-2xl py-3.5 mt-2 transition-all"
                 >
-                  {loading ? 'Calculating...' : 'End Trip • Calculate Mileage'}
+                  {loading ? 'Processing Performance Array...' : 'Close Manifest and Calculate Efficiency'}
                 </button>
               </div>
             </motion.div>
@@ -1652,15 +1564,15 @@ export default function App() {
         </AnimatePresence>
       </main>
 
-      {/* Bottom Nav - only on home */}
+      {/* Floating Dynamic Trigger Bottom Bar */}
       {currentScreen === 'home' && !activeTrip && (
-        <div className="fixed bottom-0 inset-x-0 max-w-lg mx-auto p-4 pb-6">
+        <div className="fixed bottom-0 inset-x-0 max-w-lg mx-auto p-4 pb-6 backdrop-blur-sm bg-gradient-to-t from-[#0B0F19] to-transparent">
           <button
             onClick={() => setCurrentScreen('start')}
-            className="w-full bg-white text-black font-semibold rounded-2xl py-4 shadow-2xl shadow-white/10 hover:bg-zinc-200 transition-colors flex items-center justify-center gap-2"
+            className="w-full bg-white text-black font-semibold rounded-2xl py-4 shadow-2xl shadow-white/5 hover:bg-zinc-200 transition-colors flex items-center justify-center gap-2"
           >
-            <Play className="w-5 h-5" />
-            Start New Trip
+            <Play className="w-5 h-5 fill-current" />
+            Initialize Route Run
           </button>
         </div>
       )}
