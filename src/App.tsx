@@ -247,7 +247,7 @@ export default function App() {
       const cleanPassword = password.trim();
 
       const { error } = await supabase.auth.signInWithPassword({
-        email: `${cleanMobile}@driver.local`,
+        email: `${cleanMobile}@driver.com`,
         password: cleanPassword
       });
 
@@ -271,7 +271,7 @@ export default function App() {
     setLoading(true);
     try {
       const { data, error } = await supabase.auth.signUp({
-        email: `${newDriverMobile.trim()}@driver.local`,
+        email: `${newDriverMobile.trim()}@driver.com`,
         password: newDriverPassword.trim()
       });
 
