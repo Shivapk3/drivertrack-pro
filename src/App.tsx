@@ -207,7 +207,6 @@ export default function App() {
   };
 
   const fetchActiveTrip = async (driverId: string) => {
-    // FIXED: Now queries anything that isn't completed to keep checkpoint states from breaking
     const { data, error } = await supabase
       .from('trips')
       .select('*')
@@ -509,6 +508,13 @@ export default function App() {
     return `${h}h ${m}m`;
   };
 
+  const openImageWindow = (base64Data: string) => {
+    const w = window.open();
+    if (w) {
+      w.document.write(`<img src="${base64Data}" style="max-width:100%; max-height:100vh; display:block; margin:auto; border-radius:8px;" />`);
+    }
+  };
+
   if (view === 'login') {
     return (
       <div className="min-h-screen bg-[#0B0F19] text-white flex flex-col">
@@ -629,6 +635,7 @@ export default function App() {
                 ))}
               </div>
 
+              {/* LIVE ACTIVE TABLE LOG VIEW */}
               <div className="bg-zinc-900/50 border border-zinc-800 rounded-2xl overflow-hidden">
                 <div className="px-5 py-4 border-b border-zinc-800 bg-zinc-950/40 flex items-center justify-between">
                   <div className="flex items-center gap-2">
@@ -647,7 +654,8 @@ export default function App() {
                           <th className="px-5 py-3 font-medium">Driver</th>
                           <th className="px-5 py-3 font-medium">Vehicle</th>
                           <th className="px-5 py-3 font-medium">Destination Reference</th>
-                          <th className="px-5 py-3 font-medium">Starting Odometer</th>
+                          <th className="px-5 py-3 font-medium">Odometer Metrics</th>
+                          <th className="px-5 py-3 font-medium">Initial Proof</th>
                           <th className="px-5 py-3 font-medium">Status Stage</th>
                         </tr>
                       </thead>
@@ -664,6 +672,21 @@ export default function App() {
                               <td className="px-5 py-3.5 text-sm font-mono text-cyan-400">{trip.vehicle_number}</td>
                               <td className="px-5 py-3.5 text-sm text-zinc-300 font-medium">{trip.destination_name}</td>
                               <td className="px-5 py-3.5 text-sm text-zinc-400">{trip.starting_km} KM</td>
+                              
+                              {/* LIVE START PHOTO PROOF COLUMN */}
+                              <td className="px-5 py-3.5">
+                                {trip.starting_km_image ? (
+                                  <img 
+                                    src={trip.starting_km_image} 
+                                    alt="Start Proof" 
+                                    className="w-12 h-8 object-cover rounded bg-zinc-950 border border-zinc-800 cursor-pointer hover:scale-105 transition-transform"
+                                    onClick={() => openImageWindow(trip.starting_km_image!)}
+                                  />
+                                ) : (
+                                  <span className="text-xs text-zinc-600">No Image</span>
+                                )}
+                              </td>
+
                               <td className="px-5 py-3.5">
                                 {isOnBreak ? (
                                   <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-orange-500/10 text-orange-400 border border-orange-500/20 animate-pulse">
@@ -684,6 +707,7 @@ export default function App() {
                 )}
               </div>
 
+              {/* COMPLETED PAST HISTORY LOG VIEW */}
               <div className="bg-zinc-900/50 border border-zinc-800 rounded-2xl overflow-hidden">
                 <div className="px-5 py-4 border-b border-zinc-800 flex items-center justify-between">
                   <h2 className="font-semibold">Completed Trip Logs (Past History)</h2>
@@ -703,6 +727,7 @@ export default function App() {
                           <th className="px-5 py-3 font-medium">Fuel Total</th>
                           <th className="px-5 py-3 font-medium">Calculated Mileage</th>
                           <th className="px-5 py-3 font-medium">Duration</th>
+                          <th className="px-5 py-3 font-medium">Odometer Snap Proofs</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-zinc-800/50">
@@ -729,6 +754,37 @@ export default function App() {
                             </td>
                             <td className="px-5 py-3.5 text-sm text-zinc-400">
                               {trip.duration_minutes ? formatDuration(trip.duration_minutes) : '-'}
+                            </td>
+
+                            {/* DUAL PREVIEW SNAP ARCHIVE LOGS */}
+                            <td className="px-5 py-3.5">
+                              <div className="flex gap-2 items-center">
+                                {trip.starting_km_image && (
+                                  <div className="text-center">
+                                    <img 
+                                      src={trip.starting_km_image} 
+                                      alt="Start" 
+                                      className="w-10 h-7 object-cover rounded bg-zinc-950 border border-zinc-800 cursor-pointer hover:scale-105"
+                                      onClick={() => openImageWindow(trip.starting_km_image!)}
+                                    />
+                                    <div className="text-[9px] text-zinc-600 mt-0.5">Start</div>
+                                  </div>
+                                )}
+                                {trip.final_km_image && (
+                                  <div className="text-center">
+                                    <img 
+                                      src={trip.final_km_image} 
+                                      alt="End" 
+                                      className="w-10 h-7 object-cover rounded bg-zinc-950 border border-zinc-800 cursor-pointer hover:scale-105"
+                                      onClick={() => openImageWindow(trip.final_km_image!)}
+                                    />
+                                    <div className="text-[9px] text-zinc-600 mt-0.5">End</div>
+                                  </div>
+                                )}
+                                {!trip.starting_km_image && !trip.final_km_image && (
+                                  <span className="text-zinc-600 text-xs">No Photos</span>
+                                )}
+                              </div>
                             </td>
                           </tr>
                         ))}
@@ -1149,7 +1205,7 @@ export default function App() {
                 <input type="number" value={finalKm} onChange={(e) => setFinalKm(e.target.value)} placeholder="Enter final odometer reading" className="w-full bg-zinc-900 border border-zinc-800 rounded-2xl px-4 py-3.5" />
               </div>
               <div>
-                <button type="button" onClick={{() => handleImageCapture('final')}} className="w-full bg-zinc-900 border border-zinc-800 rounded-2xl p-4 text-center">
+                <button type="button" onClick={() => handleImageCapture('final')} className="w-full bg-zinc-900 border border-zinc-800 rounded-2xl p-4 text-center">
                   {finalKmImage ? <span className="text-violet-400 text-sm">✓ Final proof linked</span> : <span className="text-zinc-400 text-sm">Snap final photo of odometer gauge</span>}
                 </button>
               </div>
