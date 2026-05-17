@@ -1,11 +1,11 @@
 import { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Truck, MapPin, Fuel, Clock, Camera, Navigation, Gauge, IndianRupee, FileText, CheckCircle2, LogOut, User, BarChart3, ArrowLeft, Play, Pause, Flag, Home, Plus, Users, Key } from 'lucide-react';
+import { Truck, MapPin, Fuel, Clock, Camera, Navigation, Gauge, IndianRupee, FileText, CheckCircle2, LogOut, User, BarChart3, ArrowLeft, Play, Pause, Flag, Home, Plus, Users, Key, RotateCw } from 'lucide-react';
 import supabase from './lib/supabase';
 
 // --- YOUR EXCEL SHEET FLEET DATA ---
 const FLEET_VEHICLES = [
-  { id: 1, vehicle_number: 'TG30T6048', model: 'NEW EICHER-2', type: 'Truck' },
+  { id: 1, vehicle_number: 'TG30T6048', model: 'NEW EICHER-1', type: 'Truck' },
   { id: 2, vehicle_number: 'TG30T6408', model: 'NEW EICHER-1', type: 'Truck' },
   { id: 3, vehicle_number: 'TS08UG0979', model: 'RED EICHER', type: 'Truck' },
   { id: 4, vehicle_number: 'TS08UG4608', model: 'BOX EICHER', type: 'Truck' },
@@ -13,10 +13,7 @@ const FLEET_VEHICLES = [
   { id: 6, vehicle_number: 'TS30TA4680', model: 'TATA ULTRA T11', type: 'Truck' },
   { id: 7, vehicle_number: 'TS30TA6840', model: 'WHITE CONTIANER', type: 'Container' },
   { id: 8, vehicle_number: 'TS30TA5691', model: 'NEW DOST', type: 'Truck' },
-  { id: 9, vehicle_number: 'TS08UG0229', model: 'DOST PLUS', type: 'Truck' },
-  { id: 10, vehicle_number: 'TG30T3218', model: 'BADA DOST', type: 'Truck' },
-  { id: 11, vehicle_number: 'TS08UE6408', model: 'PARTNER', type: 'Truck' },
-  { id: 11, vehicle_number: 'TS08UG4545', model: 'SML STAFF BUS', type: 'BUS' },
+  { id: 9, vehicle_number: 'TS08UG0229', model: 'DOST PLUS', type: 'Truck' }
 ];
 
 type Driver = {
@@ -154,9 +151,13 @@ export default function App() {
       }
     });
 
+    refreshAdminData();
+  }, []);
+
+  const refreshAdminData = () => {
     fetchAllTrips();
     fetchDrivers();
-  }, []);
+  };
 
   const fetchDriver = async (id: string) => {
     try {
@@ -180,6 +181,7 @@ export default function App() {
         
         if (profile.is_admin === true || profile.role === 'admin' || currentDriver.mobile === '9492911408') {
           setView('admin');
+          refreshAdminData();
         } else {
           setView('driver');
           fetchActiveTrip(id);
@@ -438,7 +440,7 @@ export default function App() {
       const { data: updated, error } = await supabase.from('trips').update({
         arrival_km: parseFloat(arrivalKm),
         arrival_km_image: arrivalKmImage,
-        arrival_time: new Date().toISOString(), // ADDED: Unlocks the next staging view
+        arrival_time: new Date().toISOString(),
         arrival_gps_lat: gps?.lat,
         arrival_gps_lng: gps?.lng,
         status: 'destination_reached',
@@ -551,23 +553,6 @@ export default function App() {
                 {loading ? 'Verifying profile...' : 'Continue'}
               </button>
             </form>
-
-            <div className="mt-8 pt-8 border-t border-zinc-900">
-              <div className="grid grid-cols-3 gap-4 text-center">
-                <div>
-                  <div className="text-emerald-400 font-semibold">GPS</div>
-                  <div className="text-xs text-zinc-600 mt-1">Auto-tracked</div>
-                </div>
-                <div>
-                  <div className="text-cyan-400 font-semibold">Fraud</div>
-                  <div className="text-xs text-zinc-600 mt-1">Protected</div>
-                </div>
-                <div>
-                  <div className="text-amber-400 font-semibold">Real-time</div>
-                  <div className="text-xs text-zinc-600 mt-1">Mileage</div>
-                </div>
-              </div>
-            </div>
           </motion.div>
         </div>
       </div>
@@ -575,7 +560,9 @@ export default function App() {
   }
 
   if (view === 'admin') {
-    const completedTrips = trips.filter(t => t.status === 'completed');
+    // SEPARATE TRIPS TO SHOW ON THE DASHBOARD
+    const activeTripsList = trips.filter(t => t.status === 'active' || t.status === 'destination_reached');
+    const completedTripsList = trips.filter(t => t.status === 'completed');
     
     return (
       <div className="min-h-screen bg-[#0B0F19] text-white">
@@ -590,7 +577,10 @@ export default function App() {
                 <p className="text-xs text-zinc-500 -mt-0.5">Control Tower</p>
               </div>
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-3">
+              <button onClick={refreshAdminData} className="p-2 hover:bg-zinc-900 rounded-xl text-zinc-400 flex items-center gap-1 text-xs">
+                <RotateCw className="w-4 h-4" /> Refresh
+              </button>
               <button onClick={logout} className="p-2 hover:bg-zinc-900 rounded-xl">
                 <LogOut className="w-5 h-5 text-zinc-500" />
               </button>
@@ -617,13 +607,14 @@ export default function App() {
           </div>
 
           {adminTab === 'dashboard' && (
-            <>
-              <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
+            <div className="space-y-8">
+              {/* STAT CARDS */}
+              <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
                 {[
-                  { label: 'Total Trips', value: completedTrips.length, icon: Truck, color: 'from-emerald-500 to-teal-500' },
-                  { label: 'Total KM Run', value: Math.round(completedTrips.reduce((s, t) => s + (t.total_distance || 0), 0)).toLocaleString(), icon: Navigation, color: 'from-cyan-500 to-blue-500' },
-                  { label: 'Fuel Dispatched', value: `${Math.round(completedTrips.reduce((s, t) => s + (t.total_fuel_used || 0), 0))} L`, icon: Fuel, color: 'from-amber-500 to-orange-500' },
-                  { label: 'Avg Fleet Mileage', value: `${(completedTrips.reduce((s, t) => s + (t.mileage || 0), 0) / (completedTrips.length || 1)).toFixed(1)} km/L`, icon: Gauge, color: 'from-violet-500 to-purple-500' },
+                  { label: 'Total Completed Trips', value: completedTripsList.length, icon: Truck, color: 'from-emerald-500 to-teal-500' },
+                  { label: 'Active Fleet Moving', value: activeTripsList.length, icon: Play, color: 'from-cyan-500 to-blue-500' },
+                  { label: 'Fuel Dispatched', value: `${Math.round(completedTripsList.reduce((s, t) => s + (t.total_fuel_used || 0), 0))} L`, icon: Fuel, color: 'from-amber-500 to-orange-500' },
+                  { label: 'Avg Fleet Mileage', value: `${(completedTripsList.reduce((s, t) => s + (t.mileage || 0), 0) / (completedTripsList.length || 1)).toFixed(1)} km/L`, icon: Gauge, color: 'from-violet-500 to-purple-500' },
                 ].map((stat) => (
                   <div key={stat.label} className="bg-zinc-900/50 border border-zinc-800 rounded-2xl p-4">
                     <div className={`w-10 h-10 rounded-xl bg-gradient-to-br ${stat.color} flex items-center justify-center mb-3`}>
@@ -635,60 +626,107 @@ export default function App() {
                 ))}
               </div>
 
+              {/* SECTION 1: LIVE ONGOING OPERATIONS (TEST TRIPS APPEAR HERE INSTANTLY) */}
+              <div className="bg-zinc-900/50 border border-zinc-800 rounded-2xl overflow-hidden">
+                <div className="px-5 py-4 border-b border-zinc-800 bg-zinc-950/40 flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <span className="w-2.5 h-2.5 rounded-full bg-cyan-400 animate-pulse" />
+                    <h2 className="font-semibold text-cyan-400">Live Ongoing Trips (On Road)</h2>
+                  </div>
+                  <span className="text-xs px-2.5 py-1 rounded-lg bg-cyan-950 text-cyan-400 font-medium">{activeTripsList.length} Drivers Active</span>
+                </div>
+                {activeTripsList.length === 0 ? (
+                  <div className="p-8 text-center text-zinc-500 text-sm">No vehicles are currently tracking out on the road.</div>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="w-full">
+                      <thead className="bg-zinc-950/50 border-b border-zinc-800">
+                        <tr className="text-left text-xs text-zinc-500">
+                          <th className="px-5 py-3 font-medium">Driver</th>
+                          <th className="px-5 py-3 font-medium">Vehicle</th>
+                          <th className="px-5 py-3 font-medium">Destination Reference</th>
+                          <th className="px-5 py-3 font-medium">Starting Odometer</th>
+                          <th className="px-5 py-3 font-medium">Status Stage</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-zinc-800/50">
+                        {activeTripsList.map((trip) => (
+                          <tr key={trip.id} className="hover:bg-zinc-800/20 transition-colors">
+                            <td className="px-5 py-3.5">
+                              <div className="font-medium text-sm text-white">{trip.driver_name}</div>
+                              <div className="text-xs text-zinc-500">Started: {new Date(trip.start_time).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</div>
+                            </td>
+                            <td className="px-5 py-3.5 text-sm font-mono text-cyan-400">{trip.vehicle_number}</td>
+                            <td className="px-5 py-3.5 text-sm text-zinc-300 font-medium">{trip.destination_name}</td>
+                            <td className="px-5 py-3.5 text-sm text-zinc-400">{trip.starting_km} KM</td>
+                            <td className="px-5 py-3.5">
+                              <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium ${trip.status === 'destination_reached' ? 'bg-amber-500/10 text-amber-400 border border-amber-500/20' : 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'}`}>
+                                {trip.status === 'destination_reached' ? 'At Terminal Destination' : 'Moving to Terminal'}
+                              </span>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+
+              {/* SECTION 2: COMPLETED RUN logs */}
               <div className="bg-zinc-900/50 border border-zinc-800 rounded-2xl overflow-hidden">
                 <div className="px-5 py-4 border-b border-zinc-800 flex items-center justify-between">
-                  <h2 className="font-semibold">Completed Trip Logs</h2>
-                  <span className="text-xs px-2.5 py-1 rounded-lg bg-zinc-800 text-zinc-400">{completedTrips.length} runs</span>
+                  <h2 className="font-semibold">Completed Trip Logs (Past History)</h2>
+                  <span className="text-xs px-2.5 py-1 rounded-lg bg-zinc-800 text-zinc-400">{completedTripsList.length} closed manifests</span>
                 </div>
-                <div className="overflow-x-auto">
-                  <table className="w-full">
-                    <thead className="bg-zinc-950/50 border-b border-zinc-800">
-                      <tr className="text-left text-xs text-zinc-500">
-                        <th className="px-5 py-3 font-medium">Driver</th>
-                        <th className="px-5 py-3 font-medium">Vehicle</th>
-                        <th className="px-5 py-3 font-medium">Destination</th>
-                        <th className="px-5 py-3 font-medium">Distance</th>
-                        <th className="px-5 py-3 font-medium">Fuel</th>
-                        <th className="px-5 py-3 font-medium">Mileage</th>
-                        <th className="px-5 py-3 font-medium">Duration</th>
-                        <th className="px-5 py-3 font-medium">Proof</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-zinc-800/50">
-                      {completedTrips.map((trip) => (
-                        <tr key={trip.id} className="hover:bg-zinc-800/30 transition-colors">
-                          <td className="px-5 py-3.5">
-                            <div className="font-medium text-sm">{trip.driver_name}</div>
-                            <div className="text-xs text-zinc-500">{new Date(trip.start_time).toLocaleDateString()}</div>
-                          </td>
-                          <td className="px-5 py-3.5 text-sm font-mono text-cyan-400">{trip.vehicle_number}</td>
-                          <td className="px-5 py-3.5 text-sm truncate max-w-[140px]">{trip.destination_name}</td>
-                          <td className="px-5 py-3.5">
-                            <div className="text-sm font-medium">{trip.total_distance?.toFixed(0)} km</div>
-                            <div className="text-xs text-zinc-500">{trip.starting_km} → {trip.final_km}</div>
-                          </td>
-                          <td className="px-5 py-3.5">
-                            <div className="text-sm">{trip.total_fuel_used?.toFixed(1)} L</div>
-                            <div className="text-xs text-zinc-500">₹{trip.total_fuel_cost?.toFixed(0)}</div>
-                          </td>
-                          <td className="px-5 py-3.5">
-                            <span className="inline-flex items-center px-2.5 py-1 rounded-lg text-xs font-medium bg-zinc-800 text-emerald-400">
-                              {trip.mileage?.toFixed(1)} km/L
-                            </span>
-                          </td>
-                          <td className="px-5 py-3.5 text-sm text-zinc-400">
-                            {trip.duration_minutes ? formatDuration(trip.duration_minutes) : '-'}
-                          </td>
-                          <td className="px-5 py-3.5 text-xs text-zinc-500">
-                            {trip.starting_km_image || trip.final_km_image ? 'Captured' : 'None'}
-                          </td>
+                {completedTripsList.length === 0 ? (
+                  <div className="p-8 text-center text-zinc-500 text-sm">No completed ride manifests found in historical archives yet.</div>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="w-full">
+                      <thead className="bg-zinc-950/50 border-b border-zinc-800">
+                        <tr className="text-left text-xs text-zinc-500">
+                          <th className="px-5 py-3 font-medium">Driver</th>
+                          <th className="px-5 py-3 font-medium">Vehicle</th>
+                          <th className="px-5 py-3 font-medium">Destination</th>
+                          <th className="px-5 py-3 font-medium">Distance Run</th>
+                          <th className="px-5 py-3 font-medium">Fuel Total</th>
+                          <th className="px-5 py-3 font-medium">Calculated Mileage</th>
+                          <th className="px-5 py-3 font-medium">Duration</th>
                         </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
+                      </thead>
+                      <tbody className="divide-y divide-zinc-800/50">
+                        {completedTripsList.map((trip) => (
+                          <tr key={trip.id} className="hover:bg-zinc-800/30 transition-colors">
+                            <td className="px-5 py-3.5">
+                              <div className="font-medium text-sm">{trip.driver_name}</div>
+                              <div className="text-xs text-zinc-500">{new Date(trip.start_time).toLocaleDateString()}</div>
+                            </td>
+                            <td className="px-5 py-3.5 text-sm font-mono text-cyan-400">{trip.vehicle_number}</td>
+                            <td className="px-5 py-3.5 text-sm truncate max-w-[140px]">{trip.destination_name}</td>
+                            <td className="px-5 py-3.5">
+                              <div className="text-sm font-medium">{trip.total_distance?.toFixed(0)} km</div>
+                              <div className="text-xs text-zinc-500">{trip.starting_km} → {trip.final_km}</div>
+                            </td>
+                            <td className="px-5 py-3.5">
+                              <div className="text-sm">{trip.total_fuel_used?.toFixed(1)} L</div>
+                              <div className="text-xs text-zinc-500">₹{trip.total_fuel_cost?.toFixed(0)}</div>
+                            </td>
+                            <td className="px-5 py-3.5">
+                              <span className="inline-flex items-center px-2.5 py-1 rounded-lg text-xs font-medium bg-zinc-800 text-emerald-400">
+                                {trip.mileage?.toFixed(1)} km/L
+                              </span>
+                            </td>
+                            <td className="px-5 py-3.5 text-sm text-zinc-400">
+                              {trip.duration_minutes ? formatDuration(trip.duration_minutes) : '-'}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
               </div>
-            </>
+            </div>
           )}
 
           {adminTab === 'drivers' && (
@@ -916,7 +954,7 @@ export default function App() {
                     )}
                   </div>
 
-                  {/* LIVE LOGGED TIME & FUEL DETAILED VIEWS */}
+                  {/* LIVE LOGGED BREAKDOWNS (SHOWN DOWN BELOW ON DRIVER VIEW) */}
                   <div className="mt-6 space-y-4">
                     {fuelLogs.length > 0 && (
                       <div className="bg-zinc-900/40 border border-zinc-800/60 rounded-2xl p-4">
@@ -1015,7 +1053,6 @@ export default function App() {
             </motion.div>
           )}
 
-          {/* MISSING REST TIMER SCREEN COMPONENT ADDED CLEANLY */}
           {currentScreen === 'rest' && (
             <motion.div key="rest" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="space-y-4">
               <div className="flex items-center gap-3 mb-2">
@@ -1024,7 +1061,7 @@ export default function App() {
               </div>
               <div>
                 <label className="text-xs text-zinc-500 mb-1 block">Current Location / Stop Title</label>
-                <input type="text" value={restLocation} onChange={(e) => setRestLocation(e.target.value)} placeholder="e.g. Highway Toll Plaza / Plaza Dhaba" className="w-full bg-zinc-900 border border-zinc-800 rounded-2xl px-4 py-3.5" />
+                <input type="text" value={restLocation} onChange={(e) => setRestLocation(e.target.value)} placeholder="e.g. Highway Toll Plaza / Dhaba" className="w-full bg-zinc-900 border border-zinc-800 rounded-2xl px-4 py-3.5" />
               </div>
               <div>
                 <label className="text-xs text-zinc-500 mb-1 block">Break Remarks (Optional)</label>
