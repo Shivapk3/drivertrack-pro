@@ -49,9 +49,6 @@ type Trip = {
   arrival_gps_lng?: number;
   final_km?: number;
   final_km_image?: string;
-  end_time?: string;
-  end_gps_lat?: number;
-  end_gps_lng?: number;
   notes?: string;
   status: 'active' | 'destination_reached' | 'completed';
   total_distance?: number;
@@ -438,6 +435,7 @@ export default function App() {
       const { data: updated, error } = await supabase.from('trips').update({
         arrival_km: parseFloat(arrivalKm),
         arrival_km_image: arrivalKmImage,
+        arrival_time: new Date().toISOString(), // ADDED: Unlocks the next staging view
         arrival_gps_lat: gps?.lat,
         arrival_gps_lng: gps?.lng,
         status: 'destination_reached',
@@ -480,6 +478,7 @@ export default function App() {
       setNotes('');
       setArrivalKm('');
       setFuelLogs([]);
+      setRestLogs([]);
     } catch (err: any) {
       alert('Closing deployment failed: ' + err.message);
     } finally {
@@ -913,6 +912,51 @@ export default function App() {
                       </button>
                     )}
                   </div>
+
+                  {/* LIVE LOGGED TIME & FUEL DETAILED VIEWS */}
+                  <div className="mt-6 space-y-4">
+                    {fuelLogs.length > 0 && (
+                      <div className="bg-zinc-900/40 border border-zinc-800/60 rounded-2xl p-4">
+                        <h3 className="text-xs font-semibold text-amber-400 uppercase tracking-wider mb-2.5 flex items-center gap-1.5">
+                          <Fuel className="w-3.5 h-3.5" /> Fuel Entries Logged
+                        </h3>
+                        <div className="space-y-2">
+                          {fuelLogs.map((log) => (
+                            <div key={log.id} className="flex justify-between items-center bg-zinc-950 p-3 rounded-xl border border-zinc-900 text-xs">
+                              <div>
+                                <div className="font-medium text-zinc-200">{log.fuel_station_name || 'Station Pump'}</div>
+                                <div className="text-[11px] text-zinc-500 mt-0.5">{log.current_km} KM • {log.fuel_quantity} Liters</div>
+                              </div>
+                              <div className="text-right font-semibold text-zinc-300">₹{log.fuel_amount}</div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {restLogs.length > 0 && (
+                      <div className="bg-zinc-900/40 border border-zinc-800/60 rounded-2xl p-4">
+                        <h3 className="text-xs font-semibold text-orange-400 uppercase tracking-wider mb-2.5 flex items-center gap-1.5">
+                          <Pause className="w-3.5 h-3.5" /> Rest Breaks Logged
+                        </h3>
+                        <div className="space-y-2">
+                          {restLogs.map((log) => (
+                            <div key={log.id} className="flex justify-between items-center bg-zinc-950 p-3 rounded-xl border border-zinc-900 text-xs">
+                              <div>
+                                <div className="font-medium text-zinc-200">{log.location_name || 'Rest Stop'}</div>
+                                <div className="text-[11px] text-zinc-500 mt-0.5">Started: {new Date(log.start_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</div>
+                              </div>
+                              <div className="text-right">
+                                <span className={`px-2.5 py-0.5 rounded text-[10px] font-medium ${log.end_time ? 'bg-zinc-800 text-zinc-400' : 'bg-orange-500/10 text-orange-400 animate-pulse'}`}>
+                                  {log.end_time ? 'Finished' : 'In Break'}
+                                </span>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
                 </>
               ) : (
                 <div className="text-center py-12">
@@ -964,6 +1008,27 @@ export default function App() {
               </div>
               <button onClick={startTrip} disabled={loading || !selectedVehicle || !destination || !startingKm || !startingKmImage} className="w-full bg-emerald-600 py-3.5 rounded-2xl font-medium mt-2">
                 {loading ? 'Starting...' : 'Start Trip'}
+              </button>
+            </motion.div>
+          )}
+
+          {/* MISSING REST TIMER SCREEN COMPONENT ADDED CLEANLY */}
+          {currentScreen === 'rest' && (
+            <motion.div key="rest" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="space-y-4">
+              <div className="flex items-center gap-3 mb-2">
+                <button onClick={() => setCurrentScreen('home')} className="p-2 hover:bg-zinc-900 rounded-xl"><ArrowLeft className="w-5 h-5" /></button>
+                <h2 className="text-xl font-semibold">Start Rest Break</h2>
+              </div>
+              <div>
+                <label className="text-xs text-zinc-500 mb-1 block">Current Location / Stop Title</label>
+                <input type="text" value={restLocation} onChange={(e) => setRestLocation(e.target.value)} placeholder="e.g. Highway Toll Plaza / Plaza Dhaba" className="w-full bg-zinc-900 border border-zinc-800 rounded-2xl px-4 py-3.5" />
+              </div>
+              <div>
+                <label className="text-xs text-zinc-500 mb-1 block">Break Remarks (Optional)</label>
+                <textarea value={restNotes} onChange={(e) => setRestNotes(e.target.value)} placeholder="e.g. Food break / Rest sleeping area..." rows={3} className="w-full bg-zinc-900 border border-zinc-800 rounded-2xl p-4 text-sm" />
+              </div>
+              <button onClick={startRest} disabled={loading} className="w-full bg-orange-600 py-3.5 rounded-2xl font-medium mt-2">
+                {loading ? 'Activating break...' : 'Start Break Timer'}
               </button>
             </motion.div>
           )}
