@@ -4,8 +4,6 @@ import { Truck, MapPin, Fuel, Clock, Camera, Navigation, Gauge, IndianRupee, Fil
 import supabase from './lib/supabase';
 
 // --- YOUR EXCEL SHEET FLEET DATA ---
-// We hardcoded your exact vehicles here so they instantly appear in the dropdown!
-// If you ever buy a new truck, just add it to this list.
 const FLEET_VEHICLES = [
   { id: 1, vehicle_number: 'TG30T6048', model: 'NEW EICHER-1', type: 'Truck' },
   { id: 2, vehicle_number: 'TG30T6408', model: 'NEW EICHER-1', type: 'Truck' },
@@ -109,7 +107,7 @@ export default function App() {
   const [restLocation, setRestLocation] = useState('');
   const [restNotes, setRestNotes] = useState('');
 
-  // Admin Driver creation states (Cleaned up!)
+  // Admin Driver creation states
   const [newDriverName, setNewDriverName] = useState('');
   const [newDriverMobile, setNewDriverMobile] = useState('');
   const [newDriverPassword, setNewDriverPassword] = useState('');
@@ -261,7 +259,6 @@ export default function App() {
     }
   };
 
-  // --- THE NEW STREAMLINED CREATION FORM ---
   const createDriver = async () => {
     if (!newDriverMobile || !newDriverName || !newDriverPassword) {
       alert('Please fill out all mandatory fields');
@@ -318,8 +315,8 @@ export default function App() {
       setCurrentScreen('home');
       setRestLocation('');
       setRestNotes('');
-    } catch (err) {
-      alert('Failed to start break');
+    } catch (err: any) {
+      alert('Failed to start break: ' + err.message);
     } finally {
       setLoading(false);
     }
@@ -337,8 +334,8 @@ export default function App() {
 
       setActiveRest(null);
       if (activeTrip) fetchRestLogs(activeTrip.id);
-    } catch (err) {
-      alert('Failed to resume trip');
+    } catch (err: any) {
+      alert('Failed to resume trip: ' + err.message);
     } finally {
       setLoading(false);
     }
@@ -366,7 +363,7 @@ export default function App() {
 
   const startTrip = async () => {
     if (!user || !selectedVehicle || !destination || !startingKm) {
-      alert('Fill all metric inputs');
+      alert('Please fill all mandatory form inputs');
       return;
     }
 
@@ -393,8 +390,8 @@ export default function App() {
       setDestination('');
       setStartingKm('');
       setStartingKmImage('');
-    } catch (err) {
-      alert('Trip initiation failed');
+    } catch (err: any) {
+      alert('Trip initiation failed: ' + (err.message || err));
     } finally {
       setLoading(false);
     }
@@ -426,8 +423,8 @@ export default function App() {
       setCurrentKm('');
       setFuelStation('');
       setFuelBillImage('');
-    } catch (err) {
-      alert('Failed to save fuel log');
+    } catch (err: any) {
+      alert('Failed to save fuel log: ' + err.message);
     } finally {
       setLoading(false);
     }
@@ -452,8 +449,8 @@ export default function App() {
       setActiveTrip(updated);
       setCurrentScreen('home');
       fetchAllTrips();
-    } catch (err) {
-      alert('Arrival logging failed');
+    } catch (err: any) {
+      alert('Arrival logging failed: ' + err.message);
     } finally {
       setLoading(false);
     }
@@ -483,8 +480,8 @@ export default function App() {
       setNotes('');
       setArrivalKm('');
       setFuelLogs([]);
-    } catch (err) {
-      alert('Closing deployment failed');
+    } catch (err: any) {
+      alert('Closing deployment failed: ' + err.message);
     } finally {
       setLoading(false);
     }
@@ -936,37 +933,38 @@ export default function App() {
             <motion.div key="start" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="space-y-4">
               <div className="flex items-center gap-3 mb-2">
                 <button onClick={() => setCurrentScreen('home')} className="p-2 hover:bg-zinc-900 rounded-xl"><ArrowLeft className="w-5 h-5" /></button>
-                <h2 className="text-xl font-semibold">Initialize Route Run</h2>
+                <h2 className="text-xl font-semibold">Start New Trip</h2>
               </div>
               
-              {/* THIS IS YOUR NEW EXCEL-BASED DROPDOWN */}
               <div>
-                <label className="text-xs text-zinc-500 mb-1 block">Vehicle Manifest ID</label>
+                <label className="text-xs text-zinc-500 mb-1 block">Select Vehicle</label>
                 <select
                   value={selectedVehicle?.id || ''}
                   onChange={(e) => setSelectedVehicle(FLEET_VEHICLES.find(v => v.id === Number(e.target.value)) || null)}
                   className="w-full bg-zinc-900 border border-zinc-800 rounded-2xl px-4 py-3.5 text-white"
                 >
-                  <option value="">Select license reference</option>
+                  <option value="">Choose a truck...</option>
                   {FLEET_VEHICLES.map(v => <option key={v.id} value={v.id}>{v.vehicle_number} • {v.model}</option>)}
                 </select>
               </div>
 
               <div>
-                <label className="text-xs text-zinc-500 mb-1 block">Target Destination</label>
-                <input type="text" value={destination} onChange={(e) => setDestination(e.target.value)} placeholder="Terminal name" className="w-full bg-zinc-900 border border-zinc-800 rounded-2xl px-4 py-3.5" />
+                <label className="text-xs text-zinc-500 mb-1 block">Destination</label>
+                <input type="text" value={destination} onChange={(e) => setDestination(e.target.value)} placeholder="Where are you going?" className="w-full bg-zinc-900 border border-zinc-800 rounded-2xl px-4 py-3.5" />
               </div>
               <div>
-                <label className="text-xs text-zinc-500 mb-1 block">Initial Odometer Reading (KM)</label>
-                <input type="number" value={startingKm} onChange={(e) => setStartingKm(e.target.value)} placeholder="Odometer value" className="w-full bg-zinc-900 border border-zinc-800 rounded-2xl px-4 py-3.5" />
+                <label className="text-xs text-zinc-500 mb-1 block">Starting KM Reading</label>
+                <input type="number" value={startingKm} onChange={(e) => setStartingKm(e.target.value)} placeholder="Enter current odometer reading" className="w-full bg-zinc-900 border border-zinc-800 rounded-2xl px-4 py-3.5" />
               </div>
               <div>
-                <label className="text-xs text-zinc-500 mb-1 block">Gauge Snapshot Camera Proof *</label>
+                <label className="text-xs text-zinc-500 mb-1 block">Odometer Photo Proof *</label>
                 <button type="button" onClick={() => handleImageCapture('start')} className="w-full bg-zinc-900 border border-zinc-800 rounded-2xl p-4 text-center">
-                  {startingKmImage ? <span className="text-emerald-400 text-sm">✓ Image Attached successfully</span> : <span className="text-zinc-400 text-sm">Tap to take initial photo</span>}
+                  {startingKmImage ? <span className="text-emerald-400 text-sm">✓ Photo attached successfully</span> : <span className="text-zinc-400 text-sm">Tap to take photo of odometer</span>}
                 </button>
               </div>
-              <button onClick={startTrip} disabled={loading || !selectedVehicle || !destination || !startingKm || !startingKmImage} className="w-full bg-emerald-600 py-3.5 rounded-2xl font-medium mt-2">Deploy Vector Run</button>
+              <button onClick={startTrip} disabled={loading || !selectedVehicle || !destination || !startingKm || !startingKmImage} className="w-full bg-emerald-600 py-3.5 rounded-2xl font-medium mt-2">
+                {loading ? 'Starting...' : 'Start Trip'}
+              </button>
             </motion.div>
           )}
 
@@ -978,28 +976,30 @@ export default function App() {
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="text-xs text-zinc-500 mb-1 block">Liters Dispatched</label>
+                  <label className="text-xs text-zinc-500 mb-1 block">Liters Added</label>
                   <input type="number" step="0.1" value={fuelQuantity} onChange={(e) => setFuelQuantity(e.target.value)} placeholder="0.0" className="w-full bg-zinc-900 border border-zinc-800 rounded-2xl px-4 py-3.5" />
                 </div>
                 <div>
-                  <label className="text-xs text-zinc-500 mb-1 block">Refuel Outlay Cost (₹)</label>
-                  <input type="number" value={fuelAmount} onChange={(e) => setFuelAmount(e.target.value)} placeholder="Amount" className="w-full bg-zinc-900 border border-zinc-800 rounded-2xl px-4 py-3.5" />
+                  <label className="text-xs text-zinc-500 mb-1 block">Fuel Cost (₹)</label>
+                  <input type="number" value={fuelAmount} onChange={(e) => setFuelAmount(e.target.value)} placeholder="Amount in Rupees" className="w-full bg-zinc-900 border border-zinc-800 rounded-2xl px-4 py-3.5" />
                 </div>
               </div>
               <div>
-                <label className="text-xs text-zinc-500 mb-1 block">Current KM Metric</label>
-                <input type="number" value={currentKm} onChange={(e) => setCurrentKm(e.target.value)} placeholder="Odometer metrics" className="w-full bg-zinc-900 border border-zinc-800 rounded-2xl px-4 py-3.5" />
+                <label className="text-xs text-zinc-500 mb-1 block">Current KM Reading</label>
+                <input type="number" value={currentKm} onChange={(e) => setCurrentKm(e.target.value)} placeholder="Enter current odometer" className="w-full bg-zinc-900 border border-zinc-800 rounded-2xl px-4 py-3.5" />
               </div>
               <div>
-                <label className="text-xs text-zinc-500 mb-1 block">Retail Pump Vendor Title</label>
+                <label className="text-xs text-zinc-500 mb-1 block">Fuel Station Name</label>
                 <input type="text" value={fuelStation} onChange={(e) => setFuelStation(e.target.value)} placeholder="e.g. HP / Indian Oil" className="w-full bg-zinc-900 border border-zinc-800 rounded-2xl px-4 py-3.5" />
               </div>
               <div>
                 <button type="button" onClick={() => handleImageCapture('fuel')} className="w-full bg-zinc-900 border border-zinc-800 rounded-2xl p-4 text-center">
-                  {fuelBillImage ? <span className="text-amber-400 text-sm">✓ Refuel receipt mapped</span> : <span className="text-zinc-400 text-sm">Capture invoice slip photo</span>}
+                  {fuelBillImage ? <span className="text-amber-400 text-sm">✓ Receipt bill mapped</span> : <span className="text-zinc-400 text-sm">Take photo of fuel bill receipt</span>}
                 </button>
               </div>
-              <button onClick={addFuel} disabled={loading || !fuelQuantity || !fuelAmount || !currentKm} className="w-full bg-amber-600 py-3.5 rounded-2xl font-medium">Transmit Refuel Array</button>
+              <button onClick={addFuel} disabled={loading || !fuelQuantity || !fuelAmount || !currentKm} className="w-full bg-amber-600 py-3.5 rounded-2xl font-medium">
+                {loading ? 'Saving...' : 'Save Fuel Entry'}
+              </button>
             </motion.div>
           )}
 
@@ -1007,18 +1007,20 @@ export default function App() {
             <motion.div key="destination" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="space-y-4">
               <div className="flex items-center gap-3 mb-2">
                 <button onClick={() => setCurrentScreen('home')} className="p-2 hover:bg-zinc-900 rounded-xl"><ArrowLeft className="w-5 h-5" /></button>
-                <h2 className="text-xl font-semibold">Checkpoint Terminal Arrival</h2>
+                <h2 className="text-xl font-semibold">Destination Reached</h2>
               </div>
               <div>
                 <label className="text-xs text-zinc-500 mb-1 block">Arrival Odometer Reading (KM)</label>
-                <input type="number" value={arrivalKm} onChange={(e) => setArrivalKm(e.target.value)} placeholder="Odometer metrics" className="w-full bg-zinc-900 border border-zinc-800 rounded-2xl px-4 py-3.5" />
+                <input type="number" value={arrivalKm} onChange={(e) => setArrivalKm(e.target.value)} placeholder="Enter current odometer" className="w-full bg-zinc-900 border border-zinc-800 rounded-2xl px-4 py-3.5" />
               </div>
               <div>
                 <button type="button" onClick={() => handleImageCapture('arrival')} className="w-full bg-zinc-900 border border-zinc-800 rounded-2xl p-4 text-center">
-                  {arrivalKmImage ? <span className="text-cyan-400 text-sm">✓ Arrival proof logged</span> : <span className="text-zinc-400 text-sm">Snap gauge odometer confirmation</span>}
+                  {arrivalKmImage ? <span className="text-cyan-400 text-sm">✓ Arrival proof logged</span> : <span className="text-zinc-400 text-sm">Snap photo of odometer gauge</span>}
                 </button>
               </div>
-              <button onClick={reachDestination} disabled={loading || !arrivalKm} className="w-full bg-cyan-600 py-3.5 rounded-2xl font-medium">Log Checkpoint Milestone</button>
+              <button onClick={reachDestination} disabled={loading || !arrivalKm} className="w-full bg-cyan-600 py-3.5 rounded-2xl font-medium">
+                {loading ? 'Submitting...' : 'Submit Arrival'}
+              </button>
             </motion.div>
           )}
 
@@ -1026,22 +1028,24 @@ export default function App() {
             <motion.div key="end" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="space-y-4">
               <div className="flex items-center gap-3 mb-2">
                 <button onClick={() => setCurrentScreen('home')} className="p-2 hover:bg-zinc-900 rounded-xl"><ArrowLeft className="w-5 h-5" /></button>
-                <h2 className="text-xl font-semibold">Terminate Run Manifest</h2>
+                <h2 className="text-xl font-semibold">End Trip</h2>
               </div>
               <div>
-                <label className="text-xs text-zinc-500 mb-1 block">Closing Base Odometer (KM)</label>
-                <input type="number" value={finalKm} onChange={(e) => setFinalKm(e.target.value)} placeholder="Final odometer value" className="w-full bg-zinc-900 border border-zinc-800 rounded-2xl px-4 py-3.5" />
+                <label className="text-xs text-zinc-500 mb-1 block">Ending KM Reading</label>
+                <input type="number" value={finalKm} onChange={(e) => setFinalKm(e.target.value)} placeholder="Enter final odometer reading" className="w-full bg-zinc-900 border border-zinc-800 rounded-2xl px-4 py-3.5" />
               </div>
               <div>
                 <button type="button" onClick={() => handleImageCapture('final')} className="w-full bg-zinc-900 border border-zinc-800 rounded-2xl p-4 text-center">
-                  {finalKmImage ? <span className="text-violet-400 text-sm">✓ Closing proof linked</span> : <span className="text-zinc-400 text-sm">Take final gauge overview snap</span>}
+                  {finalKmImage ? <span className="text-violet-400 text-sm">✓ Final proof linked</span> : <span className="text-zinc-400 text-sm">Snap final photo of odometer gauge</span>}
                 </button>
               </div>
               <div>
-                <label className="text-xs text-zinc-500 mb-1 block">Run Remarks / Closing Notes</label>
-                <textarea value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Provide comments regarding vehicle handling or transit bottlenecks..." rows={3} className="w-full bg-zinc-900 border border-zinc-800 rounded-2xl p-4 text-sm" />
+                <label className="text-xs text-zinc-500 mb-1 block">Trip Remarks / Closing Notes</label>
+                <textarea value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Provide any comments regarding vehicle handling or road bottlenecks..." rows={3} className="w-full bg-zinc-900 border border-zinc-800 rounded-2xl p-4 text-sm" />
               </div>
-              <button onClick={endTrip} disabled={loading || !finalKm || !finalKmImage} className="w-full bg-gradient-to-r from-violet-600 to-fuchsia-600 py-3.5 rounded-2xl font-medium">Terminate Manifest Sequence</button>
+              <button onClick={endTrip} disabled={loading || !finalKm || !finalKmImage} className="w-full bg-gradient-to-r from-violet-600 to-fuchsia-600 py-3.5 rounded-2xl font-medium">
+                {loading ? 'Ending...' : 'End Trip'}
+              </button>
             </motion.div>
           )}
         </AnimatePresence>
