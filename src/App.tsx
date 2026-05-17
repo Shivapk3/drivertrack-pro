@@ -3,14 +3,26 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { Truck, MapPin, Fuel, Clock, Camera, Navigation, Gauge, IndianRupee, FileText, CheckCircle2, LogOut, User, BarChart3, ArrowLeft, Play, Pause, Flag, Home, Plus, Users, Key } from 'lucide-react';
 import supabase from './lib/supabase';
 
+// --- YOUR EXCEL SHEET FLEET DATA ---
+// We hardcoded your exact vehicles here so they instantly appear in the dropdown!
+// If you ever buy a new truck, just add it to this list.
+const FLEET_VEHICLES = [
+  { id: 1, vehicle_number: 'TG30T6048', model: 'NEW EICHER-1', type: 'Truck' },
+  { id: 2, vehicle_number: 'TG30T6408', model: 'NEW EICHER-1', type: 'Truck' },
+  { id: 3, vehicle_number: 'TS08UG0979', model: 'RED EICHER', type: 'Truck' },
+  { id: 4, vehicle_number: 'TS08UG4608', model: 'BOX EICHER', type: 'Truck' },
+  { id: 5, vehicle_number: 'TS30TA4608', model: 'TATA ULTRA T11', type: 'Truck' },
+  { id: 6, vehicle_number: 'TS30TA4680', model: 'TATA ULTRA T11', type: 'Truck' },
+  { id: 7, vehicle_number: 'TS30TA6840', model: 'WHITE CONTIANER', type: 'Container' },
+  { id: 8, vehicle_number: 'TS30TA5691', model: 'NEW DOST', type: 'Truck' },
+  { id: 9, vehicle_number: 'TS08UG0229', model: 'DOST PLUS', type: 'Truck' }
+];
+
 type Driver = {
   id: string;
   mobile: string;
   name: string;
   role: 'driver' | 'admin';
-  vehicle_name?: string;
-  vehicle_number?: string;
-  vehicle_type?: string;
 };
 
 type Vehicle = {
@@ -85,7 +97,6 @@ export default function App() {
   const [mobile, setMobile] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
-  const [vehicles, setVehicles] = useState<Vehicle[]>([]);
   const [activeTrip, setActiveTrip] = useState<Trip | null>(null);
   const [trips, setTrips] = useState<Trip[]>([]);
   const [fuelLogs, setFuelLogs] = useState<FuelLog[]>([]);
@@ -98,13 +109,10 @@ export default function App() {
   const [restLocation, setRestLocation] = useState('');
   const [restNotes, setRestNotes] = useState('');
 
-  // Admin Driver/Vehicle creation states
+  // Admin Driver creation states (Cleaned up!)
   const [newDriverName, setNewDriverName] = useState('');
   const [newDriverMobile, setNewDriverMobile] = useState('');
   const [newDriverPassword, setNewDriverPassword] = useState('');
-  const [newVehicleName, setNewVehicleName] = useState('');
-  const [newVehicleNumber, setNewVehicleNumber] = useState('');
-  const [newVehicleType, setNewVehicleType] = useState('Truck');
 
   // Form states
   const [selectedVehicle, setSelectedVehicle] = useState<Vehicle | null>(null);
@@ -148,12 +156,9 @@ export default function App() {
       }
     });
 
-    fetchVehicles();
     fetchAllTrips();
     fetchDrivers();
   }, []);
-
-  // --- REPLACED FAKE APIs WITH DIRECT SUPABASE CALLS ---
 
   const fetchDriver = async (id: string) => {
     try {
@@ -169,10 +174,8 @@ export default function App() {
         const currentDriver: Driver = {
           id: profile.id,
           mobile: profile.phone?.replace('+91', '') || '',
-          name: profile.full_name || profile.vehicle_name || 'Fleet Admin',
-          role: profile.role || (profile.is_admin ? 'admin' : 'driver'),
-          vehicle_number: profile.vehicle_number,
-          vehicle_type: profile.vehicle_type
+          name: profile.full_name || 'Fleet Member',
+          role: profile.role || (profile.is_admin ? 'admin' : 'driver')
         };
 
         setUser(currentDriver);
@@ -189,22 +192,14 @@ export default function App() {
     }
   };
 
-  const fetchVehicles = async () => {
-    const { data, error } = await supabase.from('vehicles').select('*');
-    if (data) setVehicles(data);
-  };
-
   const fetchDrivers = async () => {
     const { data, error } = await supabase.from('profiles').select('*');
     if (data) {
       const mappedDrivers = data.map(profile => ({
         id: profile.id,
         mobile: profile.phone?.replace('+91', '') || '',
-        name: profile.full_name || profile.vehicle_name || 'Driver',
-        role: profile.role || (profile.is_admin ? 'admin' : 'driver'),
-        vehicle_number: profile.vehicle_number,
-        vehicle_name: profile.vehicle_name,
-        vehicle_type: profile.vehicle_type
+        name: profile.full_name || 'Driver',
+        role: profile.role || (profile.is_admin ? 'admin' : 'driver')
       })) as Driver[];
       setDrivers(mappedDrivers);
     }
@@ -266,8 +261,9 @@ export default function App() {
     }
   };
 
+  // --- THE NEW STREAMLINED CREATION FORM ---
   const createDriver = async () => {
-    if (!newDriverMobile || !newDriverName || !newDriverPassword || !newVehicleNumber) {
+    if (!newDriverMobile || !newDriverName || !newDriverPassword) {
       alert('Please fill out all mandatory fields');
       return;
     }
@@ -282,34 +278,19 @@ export default function App() {
       if (error) throw error;
 
       if (data.user) {
-        // Create the Profile Row directly in Supabase
         await supabase.from('profiles').insert({
           id: data.user.id,
           phone: `+91${newDriverMobile.trim()}`,
           role: 'driver',
           full_name: newDriverName,
-          vehicle_name: newVehicleName || null,
-          vehicle_number: newVehicleNumber,
-          vehicle_type: newVehicleType,
           is_admin: false
         });
 
-        // Create the Vehicle Row directly in Supabase
-        await supabase.from('vehicles').insert({
-          vehicle_number: newVehicleNumber,
-          model: newVehicleName || 'Fleet Vehicle',
-          type: newVehicleType
-        });
-
-        alert(`Driver added successfully!\nName: ${newDriverName}`);
+        alert(`Driver added successfully!\nName: ${newDriverName}\nYou can now text them their login details.`);
         setNewDriverMobile('');
         setNewDriverName('');
         setNewDriverPassword('');
-        setNewVehicleName('');
-        setNewVehicleNumber('');
-        setNewVehicleType('Truck');
         fetchDrivers();
-        fetchVehicles();
       }
     } catch (err: any) {
       alert('Error creating profile: ' + err.message);
@@ -753,45 +734,13 @@ export default function App() {
                         className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:border-violet-500/50"
                       />
                     </div>
-                    <div>
-                      <label className="text-xs text-zinc-400 mb-1.5 block">Vehicle Model / Name</label>
-                      <input
-                        type="text"
-                        value={newVehicleName}
-                        onChange={(e) => setNewVehicleName(e.target.value)}
-                        placeholder="e.g. BharatBenz Truck"
-                        className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:border-violet-500/50"
-                      />
-                    </div>
-                    <div>
-                      <label className="text-xs text-zinc-400 mb-1.5 block">Vehicle Plate Number *</label>
-                      <input
-                        type="text"
-                        value={newVehicleNumber}
-                        onChange={(e) => setNewVehicleNumber(e.target.value)}
-                        placeholder="e.g. TS-09-EX-1234"
-                        className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3.5 py-2.5 text-sm font-mono text-cyan-400 focus:outline-none focus:border-violet-500/50"
-                      />
-                    </div>
-                    <div>
-                      <label className="text-xs text-zinc-400 mb-1.5 block">Vehicle Classification Type</label>
-                      <select
-                        value={newVehicleType}
-                        onChange={(e) => setNewVehicleType(e.target.value)}
-                        className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none"
-                      >
-                        <option value="Truck">Truck</option>
-                        <option value="Auto">Auto</option>
-                        <option value="Container">Container</option>
-                      </select>
-                    </div>
 
                     <button
                       onClick={createDriver}
-                      disabled={loading || !newDriverMobile || !newDriverName || !newDriverPassword || !newVehicleNumber}
+                      disabled={loading || !newDriverMobile || !newDriverName || !newDriverPassword}
                       className="w-full bg-violet-600 hover:bg-violet-500 disabled:opacity-40 text-white font-medium rounded-xl py-2.5 text-sm transition-colors mt-2"
                     >
-                      {loading ? 'Creating account...' : 'Create Driver Profile'}
+                      {loading ? 'Creating account...' : 'Create Driver Login'}
                     </button>
                   </div>
                 </div>
@@ -813,12 +762,8 @@ export default function App() {
                             <div>
                               <div className="font-medium text-base">{driver.name}</div>
                               <div className="text-sm text-zinc-500 font-mono mt-0.5">Mobile login: {driver.mobile}</div>
-                              {driver.vehicle_number && (
-                                <div className="text-xs text-cyan-400 mt-1 font-mono">Assigned: {driver.vehicle_number} {driver.vehicle_name ? `(${driver.vehicle_name})` : ''}</div>
-                              )}
                             </div>
                           </div>
-                          <span className="text-[10px] px-2 py-0.5 rounded bg-zinc-800 text-zinc-400">{driver.vehicle_type || 'Standard'}</span>
                         </div>
                       </div>
                     ))}
@@ -993,17 +938,20 @@ export default function App() {
                 <button onClick={() => setCurrentScreen('home')} className="p-2 hover:bg-zinc-900 rounded-xl"><ArrowLeft className="w-5 h-5" /></button>
                 <h2 className="text-xl font-semibold">Initialize Route Run</h2>
               </div>
+              
+              {/* THIS IS YOUR NEW EXCEL-BASED DROPDOWN */}
               <div>
                 <label className="text-xs text-zinc-500 mb-1 block">Vehicle Manifest ID</label>
                 <select
                   value={selectedVehicle?.id || ''}
-                  onChange={(e) => setSelectedVehicle(vehicles.find(v => v.id === Number(e.target.value)) || null)}
+                  onChange={(e) => setSelectedVehicle(FLEET_VEHICLES.find(v => v.id === Number(e.target.value)) || null)}
                   className="w-full bg-zinc-900 border border-zinc-800 rounded-2xl px-4 py-3.5 text-white"
                 >
                   <option value="">Select license reference</option>
-                  {vehicles.map(v => <option key={v.id} value={v.id}>{v.vehicle_number} • {v.model}</option>)}
+                  {FLEET_VEHICLES.map(v => <option key={v.id} value={v.id}>{v.vehicle_number} • {v.model}</option>)}
                 </select>
               </div>
+
               <div>
                 <label className="text-xs text-zinc-500 mb-1 block">Target Destination</label>
                 <input type="text" value={destination} onChange={(e) => setDestination(e.target.value)} placeholder="Terminal name" className="w-full bg-zinc-900 border border-zinc-800 rounded-2xl px-4 py-3.5" />
