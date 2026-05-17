@@ -57,6 +57,7 @@ type Trip = {
   mileage?: number;
   duration_minutes?: number;
   created_at: string;
+  rest_logs?: RestLog[];
 };
 
 type FuelLog = {
@@ -206,11 +207,12 @@ export default function App() {
   };
 
   const fetchActiveTrip = async (driverId: string) => {
+    // FIXED: Now queries anything that isn't completed to keep checkpoint states from breaking
     const { data, error } = await supabase
       .from('trips')
       .select('*')
       .eq('driver_id', driverId)
-      .eq('status', 'active');
+      .neq('status', 'completed');
       
     if (data && data.length > 0) {
       setActiveTrip(data[0]);
@@ -221,7 +223,10 @@ export default function App() {
   };
 
   const fetchAllTrips = async () => {
-    const { data, error } = await supabase.from('trips').select('*').order('created_at', { ascending: false });
+    const { data, error } = await supabase
+      .from('trips')
+      .select('*, rest_logs(*)')
+      .order('created_at', { ascending: false });
     if (data) setTrips(data);
   };
 
@@ -560,7 +565,6 @@ export default function App() {
   }
 
   if (view === 'admin') {
-    // SEPARATE TRIPS TO SHOW ON THE DASHBOARD
     const activeTripsList = trips.filter(t => t.status === 'active' || t.status === 'destination_reached');
     const completedTripsList = trips.filter(t => t.status === 'completed');
     
@@ -608,7 +612,6 @@ export default function App() {
 
           {adminTab === 'dashboard' && (
             <div className="space-y-8">
-              {/* STAT CARDS */}
               <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
                 {[
                   { label: 'Total Completed Trips', value: completedTripsList.length, icon: Truck, color: 'from-emerald-500 to-teal-500' },
@@ -626,7 +629,6 @@ export default function App() {
                 ))}
               </div>
 
-              {/* SECTION 1: LIVE ONGOING OPERATIONS (TEST TRIPS APPEAR HERE INSTANTLY) */}
               <div className="bg-zinc-900/50 border border-zinc-800 rounded-2xl overflow-hidden">
                 <div className="px-5 py-4 border-b border-zinc-800 bg-zinc-950/40 flex items-center justify-between">
                   <div className="flex items-center gap-2">
@@ -650,29 +652,38 @@ export default function App() {
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-zinc-800/50">
-                        {activeTripsList.map((trip) => (
-                          <tr key={trip.id} className="hover:bg-zinc-800/20 transition-colors">
-                            <td className="px-5 py-3.5">
-                              <div className="font-medium text-sm text-white">{trip.driver_name}</div>
-                              <div className="text-xs text-zinc-500">Started: {new Date(trip.start_time).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</div>
-                            </td>
-                            <td className="px-5 py-3.5 text-sm font-mono text-cyan-400">{trip.vehicle_number}</td>
-                            <td className="px-5 py-3.5 text-sm text-zinc-300 font-medium">{trip.destination_name}</td>
-                            <td className="px-5 py-3.5 text-sm text-zinc-400">{trip.starting_km} KM</td>
-                            <td className="px-5 py-3.5">
-                              <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium ${trip.status === 'destination_reached' ? 'bg-amber-500/10 text-amber-400 border border-amber-500/20' : 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'}`}>
-                                {trip.status === 'destination_reached' ? 'At Terminal Destination' : 'Moving to Terminal'}
-                              </span>
-                            </td>
-                          </tr>
-                        ))}
+                        {activeTripsList.map((trip) => {
+                          const isOnBreak = trip.rest_logs?.some(r => !r.end_time);
+
+                          return (
+                            <tr key={trip.id} className="hover:bg-zinc-800/20 transition-colors">
+                              <td className="px-5 py-3.5">
+                                <div className="font-medium text-sm text-white">{trip.driver_name}</div>
+                                <div className="text-xs text-zinc-500">Started: {new Date(trip.start_time).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</div>
+                              </td>
+                              <td className="px-5 py-3.5 text-sm font-mono text-cyan-400">{trip.vehicle_number}</td>
+                              <td className="px-5 py-3.5 text-sm text-zinc-300 font-medium">{trip.destination_name}</td>
+                              <td className="px-5 py-3.5 text-sm text-zinc-400">{trip.starting_km} KM</td>
+                              <td className="px-5 py-3.5">
+                                {isOnBreak ? (
+                                  <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-orange-500/10 text-orange-400 border border-orange-500/20 animate-pulse">
+                                    On Break
+                                  </span>
+                                ) : (
+                                  <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium ${trip.status === 'destination_reached' ? 'bg-amber-500/10 text-amber-400 border border-amber-500/20' : 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'}`}>
+                                    {trip.status === 'destination_reached' ? 'At Terminal Destination' : 'Moving to Terminal'}
+                                  </span>
+                                )}
+                              </td>
+                            </tr>
+                          );
+                        })}
                       </tbody>
                     </table>
                   </div>
                 )}
               </div>
 
-              {/* SECTION 2: COMPLETED RUN logs */}
               <div className="bg-zinc-900/50 border border-zinc-800 rounded-2xl overflow-hidden">
                 <div className="px-5 py-4 border-b border-zinc-800 flex items-center justify-between">
                   <h2 className="font-semibold">Completed Trip Logs (Past History)</h2>
@@ -814,7 +825,6 @@ export default function App() {
     );
   }
 
-  // STANDARD DRIVER TELEMETRY WORKFLOW INTERFACE
   return (
     <div className="min-h-screen bg-[#0B0F19] text-white flex flex-col max-w-lg mx-auto relative border-x border-zinc-900 shadow-2xl">
       <input ref={fileInputRef} type="file" accept="image/*" capture="environment" onChange={handleFileChange} className="hidden" />
@@ -954,7 +964,6 @@ export default function App() {
                     )}
                   </div>
 
-                  {/* LIVE LOGGED BREAKDOWNS (SHOWN DOWN BELOW ON DRIVER VIEW) */}
                   <div className="mt-6 space-y-4">
                     {fuelLogs.length > 0 && (
                       <div className="bg-zinc-900/40 border border-zinc-800/60 rounded-2xl p-4">
@@ -1140,7 +1149,7 @@ export default function App() {
                 <input type="number" value={finalKm} onChange={(e) => setFinalKm(e.target.value)} placeholder="Enter final odometer reading" className="w-full bg-zinc-900 border border-zinc-800 rounded-2xl px-4 py-3.5" />
               </div>
               <div>
-                <button type="button" onClick={() => handleImageCapture('final')} className="w-full bg-zinc-900 border border-zinc-800 rounded-2xl p-4 text-center">
+                <button type="button" onClick={{() => handleImageCapture('final')}} className="w-full bg-zinc-900 border border-zinc-800 rounded-2xl p-4 text-center">
                   {finalKmImage ? <span className="text-violet-400 text-sm">✓ Final proof linked</span> : <span className="text-zinc-400 text-sm">Snap final photo of odometer gauge</span>}
                 </button>
               </div>
