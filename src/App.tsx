@@ -16,6 +16,7 @@ const FLEET_VEHICLES = [
   { id: 9, vehicle_number: 'TS08UG0229', model: 'DOST PLUS', type: 'Truck' },
   { id: 10, vehicle_number: 'TG30T3218', model: 'BADA DOST', type: 'Truck' },
   { id: 11, vehicle_number: 'TS08UE6408', model: 'PARTNER', type: 'Truck' },
+  { id: 11, vehicle_number: 'TS08UG4545', model: 'SML STAFF BUS', type: 'BUS' },
 ];
 
 type Driver = {
