@@ -5,7 +5,7 @@ import supabase from './lib/supabase';
 
 // --- YOUR EXCEL SHEET FLEET DATA ---
 const FLEET_VEHICLES = [
-  { id: 1, vehicle_number: 'TG30T6048', model: 'NEW EICHER-1', type: 'Truck' },
+  { id: 1, vehicle_number: 'TG30T6048', model: 'NEW EICHER-2', type: 'Truck' },
   { id: 2, vehicle_number: 'TG30T6408', model: 'NEW EICHER-1', type: 'Truck' },
   { id: 3, vehicle_number: 'TS08UG0979', model: 'RED EICHER', type: 'Truck' },
   { id: 4, vehicle_number: 'TS08UG4608', model: 'BOX EICHER', type: 'Truck' },
@@ -13,7 +13,9 @@ const FLEET_VEHICLES = [
   { id: 6, vehicle_number: 'TS30TA4680', model: 'TATA ULTRA T11', type: 'Truck' },
   { id: 7, vehicle_number: 'TS30TA6840', model: 'WHITE CONTIANER', type: 'Container' },
   { id: 8, vehicle_number: 'TS30TA5691', model: 'NEW DOST', type: 'Truck' },
-  { id: 9, vehicle_number: 'TS08UG0229', model: 'DOST PLUS', type: 'Truck' }
+  { id: 9, vehicle_number: 'TS08UG0229', model: 'DOST PLUS', type: 'Truck' },
+  { id: 10, vehicle_number: 'TG30T3218', model: 'BADA DOST', type: 'Truck' },
+  { id: 11, vehicle_number: 'TS08UE6408', model: 'PARTNER', type: 'Truck' },
 ];
 
 type Driver = {
