@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Truck, MapPin, Fuel, Clock, Camera, Navigation, Gauge, IndianRupee, FileText, CheckCircle2, LogOut, User, BarChart3, ArrowLeft, Play, Pause, Flag, Home, Plus, Users, Key, RotateCw } from 'lucide-react';
+import { Truck, MapPin, Fuel, Clock, Camera, Navigation, Gauge, IndianRupee, FileText, CheckCircle2, LogOut, User, BarChart3, ArrowLeft, Play, Pause, Flag, Home, Plus, Users, Key, RotateCw, Download, Calendar } from 'lucide-react';
 import supabase from './lib/supabase';
 
 // --- YOUR EXCEL SHEET FLEET DATA ---
@@ -13,7 +13,10 @@ const FLEET_VEHICLES = [
   { id: 6, vehicle_number: 'TS30TA4680', model: 'TATA ULTRA T11', type: 'Truck' },
   { id: 7, vehicle_number: 'TS30TA6840', model: 'WHITE CONTIANER', type: 'Container' },
   { id: 8, vehicle_number: 'TS30TA5691', model: 'NEW DOST', type: 'Truck' },
-  { id: 9, vehicle_number: 'TS08UG0229', model: 'DOST PLUS', type: 'Truck' }
+  { id: 9, vehicle_number: 'TS08UG0229', model: 'DOST PLUS', type: 'Truck' },
+  { id: 10, vehicle_number: 'TG30T3218', model: 'BADA DOST', type: 'Truck' },
+  { id: 11, vehicle_number: 'TS08UE6408', model: 'PARTNER', type: 'Truck' },
+  { id: 11, vehicle_number: 'TS08UE6408', model: 'PARTNER', type: 'Truck' }
 ];
 
 type Driver = {
@@ -36,6 +39,7 @@ type Trip = {
   driver_name: string;
   vehicle_id: number;
   vehicle_number: string;
+  start_location_name: string;
   destination_name: string;
   starting_km: number;
   starting_km_image?: string;
@@ -49,11 +53,17 @@ type Trip = {
   arrival_gps_lng?: number;
   final_km?: number;
   final_km_image?: string;
+  end_time?: string;
+  end_gps_lat?: number;
+  end_gps_lng?: number;
   notes?: string;
   status: 'active' | 'destination_reached' | 'completed';
   total_distance?: number;
+  outbound_distance?: number;
+  inbound_distance?: number;
   total_fuel_used?: number;
   total_fuel_cost?: number;
+  total_break_minutes?: number;
   mileage?: number;
   duration_minutes?: number;
   created_at: string;
@@ -332,10 +342,15 @@ export default function App() {
     if (!activeRest) return;
     setLoading(true);
     try {
+      const endTime = new Date();
+      const startTime = new Date(activeRest.start_time);
+      const duration = Math.round((endTime.getTime() - startTime.getTime()) / 60000);
+
       await supabase.from('rest_logs').update({
-        end_time: new Date().toISOString(),
+        end_time: endTime.toISOString(),
         end_gps_lat: gps?.lat,
-        end_gps_lng: gps?.lng
+        end_gps_lng: gps?.lng,
+        duration_minutes: duration
       }).eq('id', activeRest.id);
 
       setActiveRest(null);
@@ -380,6 +395,7 @@ export default function App() {
         driver_name: user.name,
         vehicle_id: selectedVehicle.id,
         vehicle_number: selectedVehicle.vehicle_number,
+        start_location_name: 'Station Base',
         destination_name: destination,
         starting_km: parseFloat(startingKm),
         starting_km_image: startingKmImage,
@@ -441,8 +457,13 @@ export default function App() {
 
     setLoading(true);
     try {
+      const arrKm = parseFloat(arrivalKm);
+      const startKm = activeTrip.starting_km;
+      const outDistance = arrKm - startKm;
+
       const { data: updated, error } = await supabase.from('trips').update({
-        arrival_km: parseFloat(arrivalKm),
+        arrival_km: arrKm,
+        outbound_distance: outDistance,
         arrival_km_image: arrivalKmImage,
         arrival_time: new Date().toISOString(),
         arrival_gps_lat: gps?.lat,
@@ -468,9 +489,37 @@ export default function App() {
 
     setLoading(true);
     try {
+      const finKm = parseFloat(finalKm);
+      const arrKm = activeTrip.arrival_km || activeTrip.starting_km;
+      const inDistance = finKm - arrKm;
+      const totDistance = finKm - activeTrip.starting_km;
+
+      // Calculate total break time across all logs
+      const totalBreakMins = restLogs.reduce((acc, log) => acc + (log.duration_minutes || 0), 0);
+      
+      // Calculate total fuel costs
+      const totalFuelAmt = fuelLogs.reduce((acc, log) => acc + (log.fuel_amount || 0), 0);
+      const totalFuelQty = fuelLogs.reduce((acc, log) => acc + (log.fuel_quantity || 0), 0);
+      
+      // Calculate duration
+      const endTime = new Date();
+      const startTime = new Date(activeTrip.start_time);
+      const totalMins = Math.round((endTime.getTime() - startTime.getTime()) / 60000);
+      
+      // Calculate mileage
+      const mileage = totalFuelQty > 0 ? (totDistance / totalFuelQty) : 0;
+
       const { error } = await supabase.from('trips').update({
-        final_km: parseFloat(finalKm),
+        final_km: finKm,
+        inbound_distance: inDistance,
+        total_distance: totDistance,
+        total_break_minutes: totalBreakMins,
+        total_fuel_cost: totalFuelAmt,
+        total_fuel_used: totalFuelQty,
+        duration_minutes: totalMins,
+        mileage: mileage,
         final_km_image: finalKmImage,
+        end_time: endTime.toISOString(),
         end_gps_lat: gps?.lat,
         end_gps_lng: gps?.lng,
         notes,
@@ -513,6 +562,52 @@ export default function App() {
     if (w) {
       w.document.write(`<img src="${base64Data}" style="max-width:100%; max-height:100vh; display:block; margin:auto; border-radius:8px;" />`);
     }
+  };
+
+  // CSV Exporter for Monthly Audits
+  const exportToCSV = () => {
+    const completedTripsList = trips.filter(t => t.status === 'completed');
+    if(completedTripsList.length === 0) return alert("No completed trips to export.");
+
+    const headers = [
+      "Driver Name", "Vehicle", "Start Location", "Destination", "Start Date/Time", 
+      "Arrival Time", "Return Date/Time", "Total Duration", "Total Breaks (Mins)",
+      "Starting KM", "Arrival KM", "Final KM", 
+      "Outbound Distance (KM)", "Inbound Distance (KM)", "Total Distance (KM)",
+      "Total Fuel Used (Liters)", "Total Fuel Cost (Rs)", "Overall Mileage", "Closing Notes"
+    ];
+
+    const rows = completedTripsList.map(t => [
+      t.driver_name,
+      t.vehicle_number,
+      t.start_location_name || 'Station',
+      t.destination_name,
+      new Date(t.start_time).toLocaleString(),
+      t.arrival_time ? new Date(t.arrival_time).toLocaleString() : 'N/A',
+      t.end_time ? new Date(t.end_time).toLocaleString() : 'N/A',
+      t.duration_minutes ? formatDuration(t.duration_minutes) : '0h 0m',
+      t.total_break_minutes || 0,
+      t.starting_km,
+      t.arrival_km || 'N/A',
+      t.final_km || 'N/A',
+      t.outbound_distance || 0,
+      t.inbound_distance || 0,
+      t.total_distance || 0,
+      t.total_fuel_used || 0,
+      t.total_fuel_cost || 0,
+      t.mileage ? t.mileage.toFixed(2) : 0,
+      `"${(t.notes || '').replace(/"/g, '""')}"` // Escape quotes for CSV
+    ]);
+
+    const csvContent = [headers.join(','), ...rows.map(e => e.join(','))].join('\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.setAttribute("href", url);
+    link.setAttribute("download", `Fleet_Audit_Report_${new Date().toLocaleDateString()}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
   };
 
   if (view === 'login') {
@@ -635,7 +730,6 @@ export default function App() {
                 ))}
               </div>
 
-              {/* LIVE ACTIVE TABLE LOG VIEW */}
               <div className="bg-zinc-900/50 border border-zinc-800 rounded-2xl overflow-hidden">
                 <div className="px-5 py-4 border-b border-zinc-800 bg-zinc-950/40 flex items-center justify-between">
                   <div className="flex items-center gap-2">
@@ -672,8 +766,6 @@ export default function App() {
                               <td className="px-5 py-3.5 text-sm font-mono text-cyan-400">{trip.vehicle_number}</td>
                               <td className="px-5 py-3.5 text-sm text-zinc-300 font-medium">{trip.destination_name}</td>
                               <td className="px-5 py-3.5 text-sm text-zinc-400">{trip.starting_km} KM</td>
-                              
-                              {/* LIVE START PHOTO PROOF COLUMN */}
                               <td className="px-5 py-3.5">
                                 {trip.starting_km_image ? (
                                   <img 
@@ -686,7 +778,6 @@ export default function App() {
                                   <span className="text-xs text-zinc-600">No Image</span>
                                 )}
                               </td>
-
                               <td className="px-5 py-3.5">
                                 {isOnBreak ? (
                                   <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-orange-500/10 text-orange-400 border border-orange-500/20 animate-pulse">
@@ -707,11 +798,18 @@ export default function App() {
                 )}
               </div>
 
-              {/* COMPLETED PAST HISTORY LOG VIEW */}
+              {/* UPGRADED COMPLETED HISTORY VIEW */}
               <div className="bg-zinc-900/50 border border-zinc-800 rounded-2xl overflow-hidden">
                 <div className="px-5 py-4 border-b border-zinc-800 flex items-center justify-between">
-                  <h2 className="font-semibold">Completed Trip Logs (Past History)</h2>
-                  <span className="text-xs px-2.5 py-1 rounded-lg bg-zinc-800 text-zinc-400">{completedTripsList.length} closed manifests</span>
+                  <div className="flex items-center gap-3">
+                    <h2 className="font-semibold">Historical Manifest Audits</h2>
+                    <span className="text-xs px-2.5 py-1 rounded-lg bg-zinc-800 text-zinc-400">{completedTripsList.length} closed manifests</span>
+                  </div>
+                  
+                  {/* NEW AUDIT CSV DOWNLOAD BUTTON */}
+                  <button onClick={exportToCSV} className="inline-flex items-center gap-2 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-medium px-3 py-1.5 rounded-lg transition-colors">
+                    <Download className="w-3.5 h-3.5" /> Export Audit CSV
+                  </button>
                 </div>
                 {completedTripsList.length === 0 ? (
                   <div className="p-8 text-center text-zinc-500 text-sm">No completed ride manifests found in historical archives yet.</div>
@@ -719,14 +817,12 @@ export default function App() {
                   <div className="overflow-x-auto">
                     <table className="w-full">
                       <thead className="bg-zinc-950/50 border-b border-zinc-800">
-                        <tr className="text-left text-xs text-zinc-500">
-                          <th className="px-5 py-3 font-medium">Driver</th>
-                          <th className="px-5 py-3 font-medium">Vehicle</th>
-                          <th className="px-5 py-3 font-medium">Destination</th>
-                          <th className="px-5 py-3 font-medium">Distance Run</th>
+                        <tr className="text-left text-xs text-zinc-500 whitespace-nowrap">
+                          <th className="px-5 py-3 font-medium">Driver & Date</th>
+                          <th className="px-5 py-3 font-medium">Vehicle / Terminal</th>
+                          <th className="px-5 py-3 font-medium">Distance Routing</th>
+                          <th className="px-5 py-3 font-medium">Break Audits</th>
                           <th className="px-5 py-3 font-medium">Fuel Total</th>
-                          <th className="px-5 py-3 font-medium">Calculated Mileage</th>
-                          <th className="px-5 py-3 font-medium">Duration</th>
                           <th className="px-5 py-3 font-medium">Odometer Snap Proofs</th>
                         </tr>
                       </thead>
@@ -735,28 +831,36 @@ export default function App() {
                           <tr key={trip.id} className="hover:bg-zinc-800/30 transition-colors">
                             <td className="px-5 py-3.5">
                               <div className="font-medium text-sm">{trip.driver_name}</div>
-                              <div className="text-xs text-zinc-500">{new Date(trip.start_time).toLocaleDateString()}</div>
-                            </td>
-                            <td className="px-5 py-3.5 text-sm font-mono text-cyan-400">{trip.vehicle_number}</td>
-                            <td className="px-5 py-3.5 text-sm truncate max-w-[140px]">{trip.destination_name}</td>
-                            <td className="px-5 py-3.5">
-                              <div className="text-sm font-medium">{trip.total_distance?.toFixed(0)} km</div>
-                              <div className="text-xs text-zinc-500">{trip.starting_km} → {trip.final_km}</div>
+                              <div className="text-[11px] text-zinc-500 mt-0.5">{new Date(trip.start_time).toLocaleDateString()}</div>
+                              <div className="text-[10px] text-zinc-600 font-mono mt-1">ID: {trip.id}</div>
                             </td>
                             <td className="px-5 py-3.5">
-                              <div className="text-sm">{trip.total_fuel_used?.toFixed(1)} L</div>
-                              <div className="text-xs text-zinc-500">₹{trip.total_fuel_cost?.toFixed(0)}</div>
+                              <div className="text-sm font-mono text-cyan-400">{trip.vehicle_number}</div>
+                              <div className="text-xs text-zinc-300 font-medium truncate max-w-[140px] mt-0.5">{trip.destination_name}</div>
                             </td>
+                            
+                            {/* UPGRADED DISTANCE CELL SHOWING OUTBOUND AND INBOUND */}
                             <td className="px-5 py-3.5">
-                              <span className="inline-flex items-center px-2.5 py-1 rounded-lg text-xs font-medium bg-zinc-800 text-emerald-400">
-                                {trip.mileage?.toFixed(1)} km/L
-                              </span>
-                            </td>
-                            <td className="px-5 py-3.5 text-sm text-zinc-400">
-                              {trip.duration_minutes ? formatDuration(trip.duration_minutes) : '-'}
+                              <div className="text-sm font-medium text-white">{trip.total_distance?.toFixed(0)} KM Total</div>
+                              <div className="text-[10px] text-zinc-500 flex gap-2 mt-0.5">
+                                <span><span className="text-zinc-600">OUT:</span> {trip.outbound_distance || 0}</span>
+                                <span><span className="text-zinc-600">IN:</span> {trip.inbound_distance || 0}</span>
+                              </div>
                             </td>
 
-                            {/* DUAL PREVIEW SNAP ARCHIVE LOGS */}
+                            {/* NEW BREAK AUDIT CELL */}
+                            <td className="px-5 py-3.5">
+                              <div className="text-sm font-medium text-orange-400">
+                                {trip.total_break_minutes ? formatDuration(trip.total_break_minutes) : '0h 0m'}
+                              </div>
+                              <div className="text-[10px] text-zinc-500 mt-0.5">Time Logged</div>
+                            </td>
+
+                            <td className="px-5 py-3.5">
+                              <div className="text-sm font-medium text-white">₹{trip.total_fuel_cost?.toFixed(0) || 0}</div>
+                              <div className="text-[10px] text-zinc-500 mt-0.5">{trip.total_fuel_used?.toFixed(1) || 0} L • {trip.mileage?.toFixed(1) || 0} km/L</div>
+                            </td>
+
                             <td className="px-5 py-3.5">
                               <div className="flex gap-2 items-center">
                                 {trip.starting_km_image && (
