@@ -14,9 +14,6 @@ const FLEET_VEHICLES = [
   { id: 7, vehicle_number: 'TS30TA6840', model: 'WHITE CONTIANER', type: 'Container' },
   { id: 8, vehicle_number: 'TS30TA5691', model: 'NEW DOST', type: 'Truck' },
   { id: 9, vehicle_number: 'TS08UG0229', model: 'DOST PLUS', type: 'Truck' }
-  { id: 10, vehicle_number: 'TG30T3218', model: 'BADA DOST', type: 'Truck' },
-  { id: 11, vehicle_number: 'TS08UE6408', model: 'PARTNER', type: 'Truck' },
-  { id: 11, vehicle_number: 'TS08UE6408', model: 'PARTNER', type: 'Truck' },
 ];
 
 type Driver = { id: string; mobile: string; name: string; role: 'driver' | 'admin'; };
@@ -40,8 +37,6 @@ type RestLog = { id: number; trip_id: number; start_time: string; end_time?: str
 export default function App() {
   const [user, setUser] = useState<Driver | null>(null);
   const [view, setView] = useState<'login' | 'driver' | 'admin'>('login');
-  
-  // NEW: Stops the app from flashing "Start Trip" while loading data from the internet
   const [isInitializing, setIsInitializing] = useState(true);
 
   const [mobile, setMobile] = useState('');
@@ -87,6 +82,7 @@ export default function App() {
       );
     }
 
+    // Checking local phone memory layout rule
     supabase.auth.getSession().then(({ data: { session } }: any) => {
       if (session?.user) {
         fetchDriver(session.user.id);
@@ -95,10 +91,10 @@ export default function App() {
       }
     });
 
-    supabase.auth.onAuthStateChange((_: any, session: any) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event: string, session: any) => {
       if (session?.user) {
         fetchDriver(session.user.id);
-      } else {
+      } else if (event === 'SIGNED_OUT') {
         setUser(null);
         setView('login');
         setIsInitializing(false);
@@ -106,6 +102,7 @@ export default function App() {
     });
 
     refreshAdminData();
+    return () => subscription.unsubscribe();
   }, []);
 
   const refreshAdminData = () => {
@@ -144,7 +141,6 @@ export default function App() {
   };
 
   const fetchActiveTrip = async (driverId: string) => {
-    // FIXED: Added .order() so if they accidentally created two trips, it forces the app to only look at the newest one instead of breaking!
     const { data, error } = await supabase
       .from('trips')
       .select('*')
@@ -160,8 +156,6 @@ export default function App() {
     } else {
       setActiveTrip(null);
     }
-    
-    // Once data is confirmed, turn off the loading spinner
     setIsInitializing(false);
   };
 
@@ -305,10 +299,6 @@ export default function App() {
     } catch (err: any) { alert('Error: ' + err.message); } finally { setLoading(false); }
   };
 
-  const logout = async () => { await supabase.auth.signOut(); setUser(null); setActiveTrip(null); setView('login'); };
-  const formatDuration = (minutes: number) => `${Math.floor(minutes / 60)}h ${minutes % 60}m`;
-  const openImageWindow = (base64Data: string) => { const w = window.open(); if (w) { w.document.write(`<img src="${base64Data}" style="max-width:100%; max-height:100vh; display:block; margin:auto; border-radius:8px;" />`); } };
-
   const exportToCSV = () => {
     const completedTripsList = trips.filter(t => t.status === 'completed');
     if(completedTripsList.length === 0) return alert("No completed trips to export.");
@@ -318,6 +308,15 @@ export default function App() {
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
     const link = document.createElement("a"); link.setAttribute("href", URL.createObjectURL(blob)); link.setAttribute("download", `Fleet_Audit_Report_${new Date().toLocaleDateString()}.csv`); document.body.appendChild(link); link.click(); document.body.removeChild(link);
   };
+
+  if (isInitializing) {
+    return (
+      <div className="min-h-screen bg-[#0B0F19] text-white flex flex-col items-center justify-center">
+        <div className="w-10 h-10 border-4 border-emerald-500 border-t-transparent rounded-full animate-spin mb-4"></div>
+        <p className="text-sm text-zinc-400">Syncing live session security parameters...</p>
+      </div>
+    );
+  }
 
   if (view === 'login') {
     return (
@@ -512,13 +511,7 @@ export default function App() {
 
       <main className="flex-1 px-4 py-5 pb-24">
         <AnimatePresence mode="wait">
-          {/* THE NEW LOADING SCREEN FIX IS HERE */}
-          {isInitializing ? (
-             <motion.div key="loading" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="text-center py-20">
-               <div className="w-10 h-10 border-4 border-emerald-500 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
-               <p className="text-sm text-zinc-400">Syncing live manifest...</p>
-             </motion.div>
-          ) : currentScreen === 'home' && (
+          {currentScreen === 'home' && (
             <motion.div key="home" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} className="space-y-4">
               {activeTrip ? (
                 <>
