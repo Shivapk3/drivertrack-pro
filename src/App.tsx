@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Truck, MapPin, Fuel, Clock, Camera, Navigation, Gauge, IndianRupee, FileText, CheckCircle2, LogOut, User, BarChart3, ArrowLeft, Play, Pause, Flag, Home, Plus, Users, Key, RotateCw, Download, Calendar, Wallet, Trash2 } from 'lucide-react';
+import { MapPin, Fuel, Clock, Camera, Navigation, Gauge, IndianRupee, FileText, CheckCircle2, LogOut, User, BarChart3, ArrowLeft, Play, Pause, Flag, Home, Plus, Users, Key, RotateCw, Download, Calendar, Wallet, Trash2 } from 'lucide-react';
 import supabase from './lib/supabase';
 
 // --- YOUR EXCEL SHEET FLEET DATA ---
@@ -246,7 +246,6 @@ export default function App() {
   const formatDuration = (minutes: number) => `${Math.floor(minutes / 60)}h ${minutes % 60}m`;
   const openImageWindow = (base64Data: string) => { const w = window.open(); if (w) { w.document.write(`<img src="${base64Data}" style="max-width:100%; max-height:100vh; display:block; margin:auto; border-radius:8px;" />`); } };
 
-  // MOBILE-SAFE EXPORT FEATURE (FIXED FOR APK / WEBVIEW)
   const exportToCSV = async () => {
     const completedTripsList = trips.filter(t => t.status === 'completed');
     if(completedTripsList.length === 0) return alert("No completed trips to export.");
@@ -258,7 +257,6 @@ export default function App() {
     const fileName = `Fleet_Audit_Report_${new Date().toLocaleDateString()}.csv`;
     const file = new File([csvContent], fileName, { type: 'text/csv;charset=utf-8;' });
 
-    // Use Native Share Menu if on Mobile/APK
     if (navigator.share && navigator.canShare && navigator.canShare({ files: [file] })) {
       try {
         await navigator.share({ files: [file], title: 'Fleet Audit Report', text: 'Monthly Fleet Audit Data attached.' });
@@ -266,7 +264,6 @@ export default function App() {
       } catch (err) { console.log('Share canceled', err); }
     }
 
-    // Standard download fallback for desktop
     const link = document.createElement("a"); 
     link.setAttribute("href", URL.createObjectURL(file)); 
     link.setAttribute("download", fileName); 
@@ -285,8 +282,10 @@ export default function App() {
         <div className="flex-1 flex flex-col items-center justify-center p-6">
           <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="w-full max-w-sm">
             <div className="text-center mb-10">
-              <div className="inline-flex items-center justify-center w-20 h-20 rounded-3xl bg-gradient-to-br from-emerald-500 to-cyan-500 mb-6 shadow-2xl shadow-emerald-500/20"><Truck className="w-10 h-10 text-white" /></div>
-              <h1 className="text-3xl font-bold tracking-tight">DriverTrack Pro</h1><p className="text-zinc-500 mt-2">Fleet mileage & fuel management</p>
+              {/* BRANDING: CUSTOM LOGO INSTEAD OF TRUCK ICON */}
+              <img src="/https://sensationalagriinputs.com/wp-content/uploads/2026/05/Sensational-drivers.png" alt="Sensational Driver Logo" className="w-24 h-24 mx-auto mb-6 object-contain drop-shadow-2xl" />
+              <h1 className="text-3xl font-bold tracking-tight">Sensational Driver</h1>
+              <p className="text-zinc-500 mt-2">Fleet mileage & expenses management</p>
             </div>
             <form onSubmit={handleLogin} className="space-y-4">
               <div><div className="relative"><User className="absolute left-3.5 top-1/2 -translate-y-1/2 w-5 h-5 text-zinc-600" /><input type="tel" value={mobile} onChange={(e) => setMobile(e.target.value)} placeholder="10-digit mobile" className="w-full bg-zinc-900/50 border border-zinc-800 rounded-2xl pl-11 pr-4 py-3.5 text-white focus:outline-none focus:border-emerald-500/50 focus:ring-2 focus:ring-emerald-500/20 transition-all" required /></div></div>
@@ -307,7 +306,11 @@ export default function App() {
       <div className="min-h-screen bg-[#0B0F19] text-white">
         <header className="sticky top-0 z-40 backdrop-blur-xl bg-[#0B0F19]/80 border-b border-zinc-900">
           <div className="max-w-7xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between">
-            <div className="flex items-center gap-3"><div className="w-9 h-9 rounded-xl bg-gradient-to-br from-violet-500 to-fuchsia-500 flex items-center justify-center"><BarChart3 className="w-5 h-5" /></div><div><h1 className="font-semibold">Admin Dashboard</h1><p className="text-xs text-zinc-500 -mt-0.5">Control Tower</p></div></div>
+            <div className="flex items-center gap-3">
+              {/* BRANDING: CUSTOM LOGO FOR ADMIN HEADER */}
+              <img src="/https://sensationalagriinputs.com/wp-content/uploads/2026/05/Sensational-drivers.png" alt="Sensational Logo" className="w-9 h-9 object-contain" />
+              <div><h1 className="font-semibold">Sensational Admin</h1><p className="text-xs text-zinc-500 -mt-0.5">Control Tower</p></div>
+            </div>
             <div className="flex items-center gap-3"><button onClick={refreshAdminData} className="p-2 hover:bg-zinc-900 rounded-xl text-zinc-400 flex items-center gap-1 text-xs"><RotateCw className="w-4 h-4" /> Refresh</button><button onClick={logout} className="p-2 hover:bg-zinc-900 rounded-xl"><LogOut className="w-5 h-5 text-zinc-500" /></button></div>
           </div>
         </header>
@@ -333,6 +336,37 @@ export default function App() {
                     <div className="text-xs text-zinc-500 mt-1">{stat.label}</div>
                   </div>
                 ))}
+              </div>
+
+              <div className="bg-zinc-900/50 border border-zinc-800 rounded-2xl overflow-hidden">
+                <div className="px-5 py-4 border-b border-zinc-800 bg-zinc-950/40 flex items-center justify-between">
+                  <div className="flex items-center gap-2"><span className="w-2.5 h-2.5 rounded-full bg-cyan-400 animate-pulse" /><h2 className="font-semibold text-cyan-400">Live Ongoing Trips (On Road)</h2></div>
+                  <span className="text-xs px-2.5 py-1 rounded-lg bg-cyan-950 text-cyan-400 font-medium">{activeTripsList.length} Drivers Active</span>
+                </div>
+                {activeTripsList.length === 0 ? (
+                  <div className="p-8 text-center text-zinc-500 text-sm">No vehicles are currently tracking out on the road.</div>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="w-full">
+                      <thead className="bg-zinc-950/50 border-b border-zinc-800"><tr className="text-left text-xs text-zinc-500"><th className="px-5 py-3 font-medium">Driver</th><th className="px-5 py-3 font-medium">Vehicle</th><th className="px-5 py-3 font-medium">Destination Reference</th><th className="px-5 py-3 font-medium">Odometer Metrics</th><th className="px-5 py-3 font-medium">Initial Proof</th><th className="px-5 py-3 font-medium">Status Stage</th></tr></thead>
+                      <tbody className="divide-y divide-zinc-800/50">
+                        {activeTripsList.map((trip) => {
+                          const isOnBreak = trip.rest_logs?.some(r => !r.end_time);
+                          return (
+                            <tr key={trip.id} className="hover:bg-zinc-800/20 transition-colors">
+                              <td className="px-5 py-3.5"><div className="font-medium text-sm text-white">{trip.driver_name}</div><div className="text-xs text-zinc-500">Started: {new Date(trip.start_time).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</div></td>
+                              <td className="px-5 py-3.5 text-sm font-mono text-cyan-400">{trip.vehicle_number}</td>
+                              <td className="px-5 py-3.5 text-sm text-zinc-300 font-medium">{trip.destination_name}</td>
+                              <td className="px-5 py-3.5 text-sm text-zinc-400">{trip.starting_km} KM</td>
+                              <td className="px-5 py-3.5">{trip.starting_km_image ? <img src={trip.starting_km_image} alt="Proof" className="w-12 h-8 object-cover rounded cursor-pointer hover:scale-105" onClick={() => openImageWindow(trip.starting_km_image!)}/> : <span className="text-xs text-zinc-600">No Image</span>}</td>
+                              <td className="px-5 py-3.5">{isOnBreak ? <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-orange-500/10 text-orange-400 border border-orange-500/20 animate-pulse">On Break</span> : <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium ${trip.status === 'destination_reached' ? 'bg-amber-500/10 text-amber-400 border border-amber-500/20' : 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'}`}>{trip.status === 'destination_reached' ? 'At Terminal Destination' : 'Moving to Terminal'}</span>}</td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
               </div>
 
               <div className="bg-zinc-900/50 border border-zinc-800 rounded-2xl overflow-hidden">
@@ -393,7 +427,6 @@ export default function App() {
                           <div className="w-10 h-10 rounded-xl bg-zinc-800 flex items-center justify-center shrink-0"><User className="w-5 h-5 text-zinc-500" /></div>
                           <div><div className="font-medium text-base">{driver.name}</div><div className="text-sm text-zinc-500 font-mono mt-0.5">Login: {driver.mobile}</div></div>
                         </div>
-                        {/* THE NEW REMOVE BUTTON */}
                         <button onClick={() => removeDriver(driver.id, driver.name)} className="p-2 bg-red-500/10 text-red-500 hover:bg-red-500 hover:text-white rounded-xl transition-colors"><Trash2 className="w-4 h-4" /></button>
                       </div>
                     ))}
@@ -414,10 +447,12 @@ export default function App() {
       <header className="sticky top-0 z-30 backdrop-blur-2xl bg-[#0B0F19]/70 border-b border-zinc-900">
         <div className="px-4 h-14 flex items-center justify-between">
           <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-emerald-500 to-cyan-500 flex items-center justify-center"><Truck className="w-4.5 h-4.5" /></div>
+            {/* BRANDING: DRIVER HEADER LOGO */}
+            <img src="/https://sensationalagriinputs.com/wp-content/uploads/2026/05/Sensational-drivers.png" alt="Sensational Logo" className="w-8 h-8 object-contain" />
             <div><div className="text-[11px] text-zinc-500 leading-none">Driver Profile</div><div className="font-medium text-sm -mt-0.5">{user?.name}</div></div>
           </div>
           <div className="flex items-center gap-2">
+            {gps && <div className="flex items-center gap-1 px-2 py-1 rounded-lg bg-emerald-500/10 border border-emerald-500/20"><div className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" /><span className="text-[10px] text-emerald-400 font-medium">GPS LOCK</span></div>}
             <button onClick={logout} className="p-2 hover:bg-zinc-900 rounded-xl"><LogOut className="w-4.5 h-4.5 text-zinc-500 hover:text-red-400" /></button>
           </div>
         </div>
@@ -446,7 +481,6 @@ export default function App() {
                   </div>
 
                   <div className="space-y-3">
-                    {/* NEW EXPENSES BUTTON */}
                     <button onClick={() => setCurrentScreen('expense')} className="w-full bg-zinc-900 border border-zinc-800 rounded-2xl p-4 flex items-center gap-4"><div className="w-12 h-12 rounded-xl bg-pink-500/10 flex items-center justify-center"><Wallet className="w-6 h-6 text-pink-400" /></div><div className="text-left"><div className="font-medium">Log Travel Expense</div><div className="text-xs text-zinc-500 mt-0.5">Tolls, repairs, fines with receipt photo</div></div></button>
                     {!activeRest && (<button onClick={() => setCurrentScreen('rest')} className="w-full bg-zinc-900 border border-zinc-800 rounded-2xl p-4 flex items-center gap-4"><div className="w-12 h-12 rounded-xl bg-orange-500/10 flex items-center justify-center"><Pause className="w-6 h-6 text-orange-400" /></div><div className="text-left"><div className="font-medium">Take Rest Break</div></div></button>)}
                     <button onClick={() => setCurrentScreen('fuel')} className="w-full bg-zinc-900 border border-zinc-800 rounded-2xl p-4 flex items-center gap-4"><div className="w-12 h-12 rounded-xl bg-amber-500/10 flex items-center justify-center"><Fuel className="w-6 h-6 text-amber-400" /></div><div className="text-left"><div className="font-medium">Add Fuel Entry</div></div></button>
@@ -454,7 +488,6 @@ export default function App() {
                   </div>
 
                   <div className="mt-6 space-y-4">
-                     {/* EXPENSE LOG PREVIEW */}
                      {expenseLogs.length > 0 && (
                       <div className="bg-zinc-900/40 border border-zinc-800/60 rounded-2xl p-4">
                         <h3 className="text-xs font-semibold text-pink-400 uppercase tracking-wider mb-2.5 flex items-center gap-1.5"><Wallet className="w-3.5 h-3.5" /> Expenses Logged</h3>
@@ -484,13 +517,15 @@ export default function App() {
             </motion.div>
           )}
 
-          {/* OTHER EXISTING SCREENS */}
           {currentScreen === 'start' && (
             <motion.div key="start" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="space-y-4">
               <div className="flex items-center gap-3 mb-2"><button onClick={() => setCurrentScreen('home')} className="p-2 hover:bg-zinc-900 rounded-xl"><ArrowLeft className="w-5 h-5" /></button><h2 className="text-xl font-semibold">Start New Trip</h2></div>
               <div><label className="text-xs text-zinc-500 mb-1 block">Select Vehicle</label><select value={selectedVehicle?.id || ''} onChange={(e) => setSelectedVehicle(FLEET_VEHICLES.find(v => v.id === Number(e.target.value)) || null)} className="w-full bg-zinc-900 border border-zinc-800 rounded-2xl px-4 py-3.5 text-white"><option value="">Choose a truck...</option>{FLEET_VEHICLES.map(v => <option key={v.id} value={v.id}>{v.vehicle_number} • {v.model}</option>)}</select></div>
               <div><label className="text-xs text-zinc-500 mb-1 block">Destination</label><input type="text" value={destination} onChange={(e) => setDestination(e.target.value)} placeholder="Where are you going?" className="w-full bg-zinc-900 border border-zinc-800 rounded-2xl px-4 py-3.5" /></div>
-              <div><label className="text-xs text-zinc-500 mb-1 block">Starting KM Reading</label><input type="number" value={startingKm} onChange={(e) => setStartingKm(e.target.value)} placeholder="Enter current odometer reading" className="w-full bg-zinc-900 border border-zinc-800 rounded-2xl px-4 py-3.5" /></div>
+              
+              {/* BRANDING: ODOMETER PLACEHOLDER SET TO 55 */}
+              <div><label className="text-xs text-zinc-500 mb-1 block">Starting KM Reading</label><input type="number" value={startingKm} onChange={(e) => setStartingKm(e.target.value)} placeholder="55" className="w-full bg-zinc-900 border border-zinc-800 rounded-2xl px-4 py-3.5" /></div>
+              
               <div><label className="text-xs text-zinc-500 mb-1 block">Odometer Photo Proof *</label><button type="button" onClick={() => handleImageCapture('start')} className="w-full bg-zinc-900 border border-zinc-800 rounded-2xl p-4 text-center">{startingKmImage ? <span className="text-emerald-400 text-sm">✓ Photo attached successfully</span> : <span className="text-zinc-400 text-sm">Tap to take photo of odometer</span>}</button></div>
               <button onClick={startTrip} disabled={loading || !selectedVehicle || !destination || !startingKm || !startingKmImage} className="w-full bg-emerald-600 py-3.5 rounded-2xl font-medium mt-2">Start Trip</button>
             </motion.div>
