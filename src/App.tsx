@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { MapPin, Fuel, Clock, Camera, Navigation, Gauge, IndianRupee, FileText, CheckCircle2, LogOut, User, BarChart3, ArrowLeft, Play, Pause, Flag, Home, Plus, Users, Key, RotateCw, Download, Calendar, Wallet, Trash2 } from 'lucide-react';
+import { Truck, MapPin, Fuel, Clock, Camera, Navigation, Gauge, IndianRupee, FileText, CheckCircle2, LogOut, User, BarChart3, ArrowLeft, Play, Pause, Flag, Home, Plus, Users, Key, RotateCw, Download, Calendar, Wallet, Trash2 } from 'lucide-react';
 import supabase from './lib/supabase';
 
 // --- YOUR EXCEL SHEET FLEET DATA ---
@@ -85,6 +85,19 @@ export default function App() {
   }, []);
 
   const refreshAdminData = () => { fetchAllTrips(); fetchDrivers(); };
+
+  const fetchDrivers = async () => {
+    const { data, error } = await supabase.from('profiles').select('*');
+    if (data) {
+      const mappedDrivers = data.map(profile => ({
+        id: profile.id,
+        mobile: profile.phone?.replace('+91', '') || '',
+        name: profile.full_name || 'Driver',
+        role: profile.role || (profile.is_admin ? 'admin' : 'driver')
+      })) as Driver[];
+      setDrivers(mappedDrivers);
+    }
+  };
 
   const fetchDriver = async (id: string) => {
     try {
@@ -282,9 +295,8 @@ export default function App() {
         <div className="flex-1 flex flex-col items-center justify-center p-6">
           <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="w-full max-w-sm">
             <div className="text-center mb-10">
-              {/* BRANDING: CUSTOM LOGO INSTEAD OF TRUCK ICON */}
-              <img src="/https://sensationalagriinputs.com/wp-content/uploads/2026/05/Sensational-drivers.png" alt="Sensational Driver Logo" className="w-24 h-24 mx-auto mb-6 object-contain drop-shadow-2xl" />
-              <h1 className="text-3xl font-bold tracking-tight">Sensational Driver</h1>
+              <img src="https://sensationalagriinputs.com/wp-content/uploads/2026/05/Sensational-drivers.png" alt="Sensational Drivers Logo" className="w-24 h-24 mx-auto mb-6 object-contain drop-shadow-2xl" />
+              <h1 className="text-3xl font-bold tracking-tight">Sensational Drivers</h1>
               <p className="text-zinc-500 mt-2">Fleet mileage & expenses management</p>
             </div>
             <form onSubmit={handleLogin} className="space-y-4">
@@ -307,8 +319,7 @@ export default function App() {
         <header className="sticky top-0 z-40 backdrop-blur-xl bg-[#0B0F19]/80 border-b border-zinc-900">
           <div className="max-w-7xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between">
             <div className="flex items-center gap-3">
-              {/* BRANDING: CUSTOM LOGO FOR ADMIN HEADER */}
-              <img src="/https://sensationalagriinputs.com/wp-content/uploads/2026/05/Sensational-drivers.png" alt="Sensational Logo" className="w-9 h-9 object-contain" />
+              <img src="https://sensationalagriinputs.com/wp-content/uploads/2026/05/Sensational-drivers.png" alt="Sensational Logo" className="w-9 h-9 object-contain" />
               <div><h1 className="font-semibold">Sensational Admin</h1><p className="text-xs text-zinc-500 -mt-0.5">Control Tower</p></div>
             </div>
             <div className="flex items-center gap-3"><button onClick={refreshAdminData} className="p-2 hover:bg-zinc-900 rounded-xl text-zinc-400 flex items-center gap-1 text-xs"><RotateCw className="w-4 h-4" /> Refresh</button><button onClick={logout} className="p-2 hover:bg-zinc-900 rounded-xl"><LogOut className="w-5 h-5 text-zinc-500" /></button></div>
@@ -447,8 +458,7 @@ export default function App() {
       <header className="sticky top-0 z-30 backdrop-blur-2xl bg-[#0B0F19]/70 border-b border-zinc-900">
         <div className="px-4 h-14 flex items-center justify-between">
           <div className="flex items-center gap-2.5">
-            {/* BRANDING: DRIVER HEADER LOGO */}
-            <img src="/https://sensationalagriinputs.com/wp-content/uploads/2026/05/Sensational-drivers.png" alt="Sensational Logo" className="w-8 h-8 object-contain" />
+            <img src="https://sensationalagriinputs.com/wp-content/uploads/2026/05/Sensational-drivers.png" alt="Sensational Logo" className="w-8 h-8 object-contain" />
             <div><div className="text-[11px] text-zinc-500 leading-none">Driver Profile</div><div className="font-medium text-sm -mt-0.5">{user?.name}</div></div>
           </div>
           <div className="flex items-center gap-2">
@@ -506,7 +516,6 @@ export default function App() {
             </motion.div>
           )}
 
-          {/* NEW EXPENSE SCREEN */}
           {currentScreen === 'expense' && (
             <motion.div key="expense" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="space-y-4">
               <div className="flex items-center gap-3 mb-2"><button onClick={() => setCurrentScreen('home')} className="p-2 hover:bg-zinc-900 rounded-xl"><ArrowLeft className="w-5 h-5" /></button><h2 className="text-xl font-semibold">Log Travel Expense</h2></div>
@@ -522,10 +531,7 @@ export default function App() {
               <div className="flex items-center gap-3 mb-2"><button onClick={() => setCurrentScreen('home')} className="p-2 hover:bg-zinc-900 rounded-xl"><ArrowLeft className="w-5 h-5" /></button><h2 className="text-xl font-semibold">Start New Trip</h2></div>
               <div><label className="text-xs text-zinc-500 mb-1 block">Select Vehicle</label><select value={selectedVehicle?.id || ''} onChange={(e) => setSelectedVehicle(FLEET_VEHICLES.find(v => v.id === Number(e.target.value)) || null)} className="w-full bg-zinc-900 border border-zinc-800 rounded-2xl px-4 py-3.5 text-white"><option value="">Choose a truck...</option>{FLEET_VEHICLES.map(v => <option key={v.id} value={v.id}>{v.vehicle_number} • {v.model}</option>)}</select></div>
               <div><label className="text-xs text-zinc-500 mb-1 block">Destination</label><input type="text" value={destination} onChange={(e) => setDestination(e.target.value)} placeholder="Where are you going?" className="w-full bg-zinc-900 border border-zinc-800 rounded-2xl px-4 py-3.5" /></div>
-              
-              {/* BRANDING: ODOMETER PLACEHOLDER SET TO 55 */}
               <div><label className="text-xs text-zinc-500 mb-1 block">Starting KM Reading</label><input type="number" value={startingKm} onChange={(e) => setStartingKm(e.target.value)} placeholder="55" className="w-full bg-zinc-900 border border-zinc-800 rounded-2xl px-4 py-3.5" /></div>
-              
               <div><label className="text-xs text-zinc-500 mb-1 block">Odometer Photo Proof *</label><button type="button" onClick={() => handleImageCapture('start')} className="w-full bg-zinc-900 border border-zinc-800 rounded-2xl p-4 text-center">{startingKmImage ? <span className="text-emerald-400 text-sm">✓ Photo attached successfully</span> : <span className="text-zinc-400 text-sm">Tap to take photo of odometer</span>}</button></div>
               <button onClick={startTrip} disabled={loading || !selectedVehicle || !destination || !startingKm || !startingKmImage} className="w-full bg-emerald-600 py-3.5 rounded-2xl font-medium mt-2">Start Trip</button>
             </motion.div>
