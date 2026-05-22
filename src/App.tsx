@@ -19,7 +19,10 @@ const FLEET_VEHICLES = [
   { id: 6, vehicle_number: 'TS30TA4680', model: 'TATA ULTRA T11', type: 'Truck' },
   { id: 7, vehicle_number: 'TS30TA6840', model: 'WHITE CONTIANER', type: 'Container' },
   { id: 8, vehicle_number: 'TS30TA5691', model: 'NEW DOST', type: 'Truck' },
-  { id: 9, vehicle_number: 'TS08UG0229', model: 'DOST PLUS', type: 'Truck' }
+  { id: 9, vehicle_number: 'TS08UG0229', model: 'DOST PLUS', type: 'Truck' },
+  { id: 10, vehicle_number: 'TG30T3218', model: 'BADA DOST', type: 'Truck' },
+  { id: 11, vehicle_number: 'TS08UE6408', model: 'PARTNER', type: 'Truck' },
+  { id: 12, vehicle_number: 'TS08UG4545', model: 'STAFF BUS', type: 'BUS' }
 ];
 
 // --- TYPE DEFINITIONS ---
