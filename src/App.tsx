@@ -219,39 +219,65 @@ export default function App() {
     } catch (e: any) { alert(e.message); } finally { setLoading(false); }
   };
 
-  // --- IMAGE HANDLING & COMPRESSION ---
-const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+// --- IMAGE HANDLING & COMPRESSION ---
+
+const handleImageCapture = (
+  target: 'start' | 'fuel' | 'arrival' | 'final' | 'expense'
+) => {
+  setUploadTarget(target);
+  fileInputRef.current?.click();
+};
+
+const handleFileChange = async (
+  e: React.ChangeEvent<HTMLInputElement>
+) => {
   const file = e.target.files?.[0];
+
   if (!file || !uploadTarget) return;
 
   setLoading(true);
+
   try {
-    // Create a unique file name
+    // Create unique filename
     const fileExt = file.name.split('.').pop();
     const fileName = `${Date.now()}_${Math.random()}.${fileExt}`;
-    
-    // Upload to the 'fleet-receipts' bucket
+
+    // Upload image to Supabase Storage
     const { error: uploadError } = await supabase.storage
       .from('fleet-receipts')
       .upload(fileName, file);
 
     if (uploadError) throw uploadError;
 
-    // Get the PUBLIC URL
+    // Get public URL
     const { data } = supabase.storage
       .from('fleet-receipts')
       .getPublicUrl(fileName);
 
-    // Save only the URL link to your state
-    if (uploadTarget === 'start') setStartingKmImage(data.publicUrl);
-    if (uploadTarget === 'fuel') setFuelBillImage(data.publicUrl);
-    if (uploadTarget === 'arrival') setArrivalKmImage(data.publicUrl);
-    if (uploadTarget === 'final') setFinalKmImage(data.publicUrl);
-    if (uploadTarget === 'expense') setExpenseImage(data.publicUrl);
+    // Save image URL
+    if (uploadTarget === 'start') {
+      setStartingKmImage(data.publicUrl);
+    }
 
-    alert("Photo uploaded successfully to the shelf!");
+    if (uploadTarget === 'fuel') {
+      setFuelBillImage(data.publicUrl);
+    }
+
+    if (uploadTarget === 'arrival') {
+      setArrivalKmImage(data.publicUrl);
+    }
+
+    if (uploadTarget === 'final') {
+      setFinalKmImage(data.publicUrl);
+    }
+
+    if (uploadTarget === 'expense') {
+      setExpenseImage(data.publicUrl);
+    }
+
+    alert('Photo uploaded successfully!');
   } catch (err: any) {
-    alert("Upload error: " + err.message);
+    alert('Upload error: ' + err.message);
   } finally {
     setLoading(false);
   }
