@@ -220,38 +220,42 @@ export default function App() {
   };
 
   // --- IMAGE HANDLING & COMPRESSION ---
-  const handleImageCapture = (target: 'start' | 'fuel' | 'arrival' | 'final' | 'expense') => { setUploadTarget(target); fileInputRef.current?.click(); };
-  
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0]; if (!file || !uploadTarget) return;
+const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  const file = e.target.files?.[0];
+  if (!file || !uploadTarget) return;
+
+  setLoading(true);
+  try {
+    // Create a unique file name
+    const fileExt = file.name.split('.').pop();
+    const fileName = `${Date.now()}_${Math.random()}.${fileExt}`;
     
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      const img = new Image();
-      img.onload = () => {
-        const canvas = document.createElement('canvas');
-        const MAX_WIDTH = 800; // Optimal scaling factor for storage
-        const scale = MAX_WIDTH / img.width;
-        
-        canvas.width = MAX_WIDTH;
-        canvas.height = img.height * scale;
-        
-        const ctx = canvas.getContext('2d');
-        if (ctx) {
-          ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-          const compressedBase64 = canvas.toDataURL('image/jpeg', 0.7); // 70% jpeg quality compression
-          
-          if (uploadTarget === 'start') setStartingKmImage(compressedBase64);
-          if (uploadTarget === 'fuel') setFuelBillImage(compressedBase64);
-          if (uploadTarget === 'arrival') setArrivalKmImage(compressedBase64);
-          if (uploadTarget === 'final') setFinalKmImage(compressedBase64);
-          if (uploadTarget === 'expense') setExpenseImage(compressedBase64);
-        }
-      };
-      img.src = event.target?.result as string;
-    };
-    reader.readAsDataURL(file);
-  };
+    // Upload to the 'fleet-receipts' bucket
+    const { error: uploadError } = await supabase.storage
+      .from('fleet-receipts')
+      .upload(fileName, file);
+
+    if (uploadError) throw uploadError;
+
+    // Get the PUBLIC URL
+    const { data } = supabase.storage
+      .from('fleet-receipts')
+      .getPublicUrl(fileName);
+
+    // Save only the URL link to your state
+    if (uploadTarget === 'start') setStartingKmImage(data.publicUrl);
+    if (uploadTarget === 'fuel') setFuelBillImage(data.publicUrl);
+    if (uploadTarget === 'arrival') setArrivalKmImage(data.publicUrl);
+    if (uploadTarget === 'final') setFinalKmImage(data.publicUrl);
+    if (uploadTarget === 'expense') setExpenseImage(data.publicUrl);
+
+    alert("Photo uploaded successfully to the shelf!");
+  } catch (err: any) {
+    alert("Upload error: " + err.message);
+  } finally {
+    setLoading(false);
+  }
+};
 
   // --- DRIVER WORKFLOW MUTATIONS ---
   const startTrip = async () => {
