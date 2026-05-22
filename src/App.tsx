@@ -4,7 +4,8 @@ import {
   Truck, MapPin, Fuel, Clock, Camera, Navigation, Gauge, 
   IndianRupee, FileText, CheckCircle2, LogOut, User, BarChart3, 
   ArrowLeft, Play, Pause, Flag, Home, Plus, Users, Key, 
-  RotateCw, Download, Calendar, Wallet, Trash2, AlertTriangle 
+  RotateCw, Download, Calendar, Wallet, Trash2, AlertTriangle,
+  X 
 } from 'lucide-react';
 import supabase from './lib/supabase';
 
@@ -48,6 +49,7 @@ export default function App() {
   const [isInitializing, setIsInitializing] = useState(true);
   const [loading, setLoading] = useState(false);
   const [currentScreen, setCurrentScreen] = useState<'home' | 'start' | 'fuel' | 'destination' | 'end' | 'rest' | 'expense'>('home');
+  const [viewImage, setViewImage] = useState<string | null>(null);
 
   // --- DATA STATE ---
   const [activeTrip, setActiveTrip] = useState<Trip | null>(null);
@@ -131,7 +133,6 @@ export default function App() {
 
   // --- DATABASE HELPER FUNCTIONS ---
   const formatDuration = (minutes: number) => `${Math.floor(minutes / 60)}h ${minutes % 60}m`;
-  const openImageWindow = (base64Data: string) => { const w = window.open(); if (w) { w.document.write(`<img src="${base64Data}" style="max-width:100%; max-height:100vh; display:block; margin:auto; border-radius:8px; background:#000;" />`); } };
 
   const refreshAdminData = () => { fetchAllTrips(); fetchDrivers(); };
 
@@ -461,7 +462,7 @@ export default function App() {
       : '0.0';
 
     return (
-      <div className="min-h-screen bg-[#0B0F19] text-white">
+      <div className="min-h-screen bg-[#0B0F19] text-white relative">
         <header className="sticky top-0 z-40 backdrop-blur-xl bg-[#0B0F19]/80 border-b border-zinc-900">
           <div className="max-w-7xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between">
             <div className="flex items-center gap-3">
@@ -482,7 +483,7 @@ export default function App() {
           </div>
         </header>
 
-        <main className="max-w-7xl mx-auto p-4 sm:p-6 space-y-6">
+        <main className="max-w-7xl mx-auto p-4 sm:p-6 space-y-6 pb-10">
           <div className="flex items-center gap-2 border-b border-zinc-800">
             <button onClick={() => setAdminTab('dashboard')} className={`px-4 py-3 text-sm font-medium border-b-2 transition-all flex items-center gap-2 ${adminTab === 'dashboard' ? 'border-violet-500 text-violet-400 font-semibold' : 'border-transparent text-zinc-500 hover:text-zinc-300'}`}>
               <BarChart3 className="w-4 h-4" /> Live Fleet Analytics
@@ -555,7 +556,7 @@ export default function App() {
                               <td className="px-5 py-3.5 font-medium text-zinc-400 font-mono text-xs">{trip.starting_km.toLocaleString()} KM</td>
                               <td className="px-5 py-3.5">
                                 {trip.starting_km_image ? (
-                                  <img src={trip.starting_km_image} alt="Start Gauge" className="w-11 h-7 object-cover rounded-lg border border-zinc-800 cursor-pointer hover:border-zinc-600 transition-all active:scale-95" onClick={() => openImageWindow(trip.starting_km_image!)}/>
+                                  <img src={trip.starting_km_image} alt="Start Gauge" className="w-11 h-7 object-cover rounded-lg border border-zinc-800 cursor-pointer hover:border-zinc-600 transition-all active:scale-95" onClick={() => setViewImage(trip.starting_km_image!)}/>
                                 ) : (
                                   <span className="text-[11px] text-zinc-600 italic">No Upload</span>
                                 )}
@@ -639,19 +640,19 @@ export default function App() {
                               <div className="flex gap-1.5 items-center">
                                 {trip.starting_km_image && (
                                   <div className="text-center group">
-                                    <img src={trip.starting_km_image} alt="Start Proof" className="w-9 h-6 object-cover rounded border border-zinc-800 cursor-pointer group-hover:border-zinc-500" onClick={() => openImageWindow(trip.starting_km_image!)}/>
+                                    <img src={trip.starting_km_image} alt="Start Proof" className="w-9 h-6 object-cover rounded border border-zinc-800 cursor-pointer group-hover:border-zinc-500" onClick={() => setViewImage(trip.starting_km_image!)}/>
                                     <div className="text-[9px] text-zinc-600 mt-0.5">Start</div>
                                   </div>
                                 )}
                                 {trip.arrival_km_image && (
                                   <div className="text-center group">
-                                    <img src={trip.arrival_km_image} alt="Arrival Proof" className="w-9 h-6 object-cover rounded border border-zinc-800 cursor-pointer group-hover:border-zinc-500" onClick={() => openImageWindow(trip.arrival_km_image!)}/>
+                                    <img src={trip.arrival_km_image} alt="Arrival Proof" className="w-9 h-6 object-cover rounded border border-zinc-800 cursor-pointer group-hover:border-zinc-500" onClick={() => setViewImage(trip.arrival_km_image!)}/>
                                     <div className="text-[9px] text-zinc-600 mt-0.5">Arriv</div>
                                   </div>
                                 )}
                                 {trip.final_km_image && (
                                   <div className="text-center group">
-                                    <img src={trip.final_km_image} alt="Final Proof" className="w-9 h-6 object-cover rounded border border-zinc-800 cursor-pointer group-hover:border-zinc-500" onClick={() => openImageWindow(trip.final_km_image!)}/>
+                                    <img src={trip.final_km_image} alt="Final Proof" className="w-9 h-6 object-cover rounded border border-zinc-800 cursor-pointer group-hover:border-zinc-500" onClick={() => setViewImage(trip.final_km_image!)}/>
                                     <div className="text-[9px] text-zinc-600 mt-0.5">End</div>
                                   </div>
                                 )}
@@ -726,6 +727,36 @@ export default function App() {
             </div>
           )}
         </main>
+
+        {/* --- FULL SCREEN IMAGE VIEWER MODAL --- */}
+        <AnimatePresence>
+          {viewImage && (
+            <motion.div 
+              initial={{ opacity: 0 }} 
+              animate={{ opacity: 1 }} 
+              exit={{ opacity: 0 }} 
+              onClick={() => setViewImage(null)}
+              className="fixed inset-0 z-[100] flex items-center justify-center bg-black/95 backdrop-blur-sm p-4 sm:p-8 cursor-pointer"
+            >
+              <button 
+                onClick={(e) => { e.stopPropagation(); setViewImage(null); }}
+                className="absolute top-6 right-6 p-3 bg-zinc-900/80 hover:bg-zinc-800 text-white rounded-full transition-colors border border-zinc-700"
+              >
+                <X className="w-6 h-6" />
+              </button>
+              <motion.img 
+                initial={{ scale: 0.9, opacity: 0 }} 
+                animate={{ scale: 1, opacity: 1 }} 
+                exit={{ scale: 0.9, opacity: 0 }}
+                transition={{ type: "spring", damping: 25, stiffness: 300 }}
+                src={viewImage} 
+                alt="Enlarged Document Proof" 
+                className="max-w-full max-h-full object-contain rounded-2xl shadow-2xl border border-zinc-800"
+                onClick={(e) => e.stopPropagation()}
+              />
+            </motion.div>
+          )}
+        </AnimatePresence>
       </div>
     );
   }
