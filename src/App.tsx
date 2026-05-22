@@ -1,9 +1,13 @@
 import { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Truck, MapPin, Fuel, Clock, Camera, Navigation, Gauge, IndianRupee, FileText, CheckCircle2, LogOut, User, BarChart3, ArrowLeft, Play, Pause, Flag, Home, Plus, Users, Key, RotateCw, Download, Calendar, Wallet, Trash2 } from 'lucide-react';
+import { 
+  Truck, MapPin, Fuel, Clock, Camera, Navigation, Gauge, 
+  IndianRupee, FileText, CheckCircle2, LogOut, User, BarChart3, 
+  ArrowLeft, Play, Pause, Flag, Home, Plus, Users, Key, 
+  RotateCw, Download, Calendar, Wallet, Trash2, AlertTriangle 
+} from 'lucide-react';
 import supabase from './lib/supabase';
 
-// --- YOUR EXCEL SHEET FLEET DATA ---
 const FLEET_VEHICLES = [
   { id: 1, vehicle_number: 'TG30T6048', model: 'NEW EICHER-1', type: 'Truck' },
   { id: 2, vehicle_number: 'TG30T6408', model: 'NEW EICHER-1', type: 'Truck' },
@@ -49,7 +53,14 @@ export default function App() {
   const [restLogs, setRestLogs] = useState<RestLog[]>([]);
   const [expenseLogs, setExpenseLogs] = useState<ExpenseLog[]>([]);
   const [currentScreen, setCurrentScreen] = useState<'home' | 'start' | 'fuel' | 'destination' | 'end' | 'rest' | 'expense'>('home');
+  
+  // Advanced GPS State Mapping
   const [gps, setGps] = useState<{lat: number, lng: number} | null>(null);
+  const [gpsError, setGpsError] = useState<string | null>(null);
+  
+  // Real-time Active Trip Ticker
+  const [liveDuration, setLiveDuration] = useState<string>('0h 0m');
+
   const [adminTab, setAdminTab] = useState<'dashboard' | 'drivers'>('dashboard');
   const [drivers, setDrivers] = useState<Driver[]>([]);
   const [activeRest, setActiveRest] = useState<RestLog | null>(null);
@@ -67,9 +78,24 @@ export default function App() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [uploadTarget, setUploadTarget] = useState<'start' | 'fuel' | 'arrival' | 'final' | 'expense' | null>(null);
 
+  // Watch Geolocation accurately
   useEffect(() => {
+    let watchId: number;
     if (navigator.geolocation) {
-      navigator.geolocation.getCurrentPosition((pos) => setGps({ lat: pos.coords.latitude, lng: pos.coords.longitude }), () => console.log('GPS denied'));
+      watchId = navigator.geolocation.watchPosition(
+        (pos) => {
+          setGps({ lat: pos.coords.latitude, lng: pos.coords.longitude });
+          setGpsError(null);
+        },
+        (err) => {
+          let msg = "GPS Signal Lost";
+          if (err.code === err.PERMISSION_DENIED) msg = "Please Enable Location Access";
+          setGpsError(msg);
+        },
+        { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+      );
+    } else {
+      setGpsError("GPS Not Supported");
     }
 
     supabase.auth.getSession().then(({ data: { session } }: any) => {
@@ -81,13 +107,31 @@ export default function App() {
     });
 
     refreshAdminData();
-    return () => subscription.unsubscribe();
+    return () => {
+      if (watchId) navigator.geolocation.clearWatch(watchId);
+      subscription.unsubscribe();
+    };
   }, []);
+
+  // Compute live ticker duration while trip is running
+  useEffect(() => {
+    if (!activeTrip || currentScreen !== 'home') return;
+    const interval = setInterval(() => {
+      const diffMins = Math.round((Date.now() - new Date(activeTrip.start_time).getTime()) / 60000);
+      setLiveDuration(formatDuration(diffMins));
+    }, 30000); // update every 30s to preserve battery life
+
+    // Initial run
+    const diffMins = Math.round((Date.now() - new Date(activeTrip.start_time).getTime()) / 60000);
+    setLiveDuration(formatDuration(diffMins));
+
+    return () => clearInterval(interval);
+  }, [activeTrip, currentScreen]);
 
   const refreshAdminData = () => { fetchAllTrips(); fetchDrivers(); };
 
   const fetchDrivers = async () => {
-    const { data, error } = await supabase.from('profiles').select('*');
+    const { data } = await supabase.from('profiles').select('*');
     if (data) {
       const mappedDrivers = data.map(profile => ({
         id: profile.id,
@@ -116,7 +160,7 @@ export default function App() {
   };
 
   const fetchActiveTrip = async (driverId: string) => {
-    const { data, error } = await supabase.from('trips').select('*').eq('driver_id', driverId).neq('status', 'completed').order('created_at', { ascending: false });
+    const { data } = await supabase.from('trips').select('*').eq('driver_id', driverId).neq('status', 'completed').order('created_at', { ascending: false });
     if (data && data.length > 0) {
       setActiveTrip(data[0]); setCurrentScreen('home'); fetchFuelLogs(data[0].id); fetchRestLogs(data[0].id); fetchExpenseLogs(data[0].id);
     } else { setActiveTrip(null); }
@@ -124,7 +168,7 @@ export default function App() {
   };
 
   const fetchAllTrips = async () => {
-    const { data, error } = await supabase.from('trips').select('*, rest_logs(*), expense_logs(*)').order('created_at', { ascending: false });
+    const { data } = await supabase.from('trips').select('*, rest_logs(*), expense_logs(*)').order('created_at', { ascending: false });
     if (data) setTrips(data);
   };
 
@@ -185,16 +229,35 @@ export default function App() {
   };
 
   const handleImageCapture = (target: 'start' | 'fuel' | 'arrival' | 'final' | 'expense') => { setUploadTarget(target); fileInputRef.current?.click(); };
+  
+  // Client-side image canvas scale compression
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]; if (!file || !uploadTarget) return;
+    
     const reader = new FileReader();
-    reader.onload = (ev) => {
-      const dataUrl = ev.target?.result as string;
-      if (uploadTarget === 'start') setStartingKmImage(dataUrl);
-      if (uploadTarget === 'fuel') setFuelBillImage(dataUrl);
-      if (uploadTarget === 'arrival') setArrivalKmImage(dataUrl);
-      if (uploadTarget === 'final') setFinalKmImage(dataUrl);
-      if (uploadTarget === 'expense') setExpenseImage(dataUrl);
+    reader.onload = (event) => {
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        const MAX_WIDTH = 800; // Optimal blueprint scaling factor for document storage
+        const scale = MAX_WIDTH / img.width;
+        
+        canvas.width = MAX_WIDTH;
+        canvas.height = img.height * scale;
+        
+        const ctx = canvas.getContext('2d');
+        if (ctx) {
+          ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+          const compressedBase64 = canvas.toDataURL('image/jpeg', 0.7); // 70% jpeg quality compression layout
+          
+          if (uploadTarget === 'start') setStartingKmImage(compressedBase64);
+          if (uploadTarget === 'fuel') setFuelBillImage(compressedBase64);
+          if (uploadTarget === 'arrival') setArrivalKmImage(compressedBase64);
+          if (uploadTarget === 'final') setFinalKmImage(compressedBase64);
+          if (uploadTarget === 'expense') setExpenseImage(compressedBase64);
+        }
+      };
+      img.src = event.target?.result as string;
     };
     reader.readAsDataURL(file);
   };
@@ -211,9 +274,15 @@ export default function App() {
 
   const addFuel = async () => {
     if (!activeTrip || !fuelQuantity || !fuelAmount || !currentKm) { alert('Missing inputs'); return; }
+    const parsedCurrentKm = parseFloat(currentKm);
+    if (parsedCurrentKm < activeTrip.starting_km) {
+      alert(`Invalid Odometer input. Value cannot be less than trip starting gauge metrics (${activeTrip.starting_km} KM).`);
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     try {
-      await supabase.from('fuel_logs').insert({ trip_id: activeTrip.id, fuel_quantity: parseFloat(fuelQuantity), fuel_amount: parseFloat(fuelAmount), current_km: parseFloat(currentKm), fuel_station_name: fuelStation, fuel_bill_image: fuelBillImage, gps_lat: gps?.lat, gps_lng: gps?.lng });
+      await supabase.from('fuel_logs').insert({ trip_id: activeTrip.id, fuel_quantity: parseFloat(fuelQuantity), fuel_amount: parseFloat(fuelAmount), current_km: parsedCurrentKm, fuel_station_name: fuelStation, fuel_bill_image: fuelBillImage, gps_lat: gps?.lat, gps_lng: gps?.lng });
       fetchFuelLogs(activeTrip.id); setCurrentScreen('home'); setFuelQuantity(''); setFuelAmount(''); setCurrentKm(''); setFuelStation(''); setFuelBillImage('');
     } catch (err: any) { alert(err.message); } finally { setLoading(false); }
   };
@@ -228,9 +297,14 @@ export default function App() {
   };
 
   const reachDestination = async () => {
-    if (!activeTrip || !arrivalKm) return; setLoading(true);
+    if (!activeTrip || !arrivalKm) return;
+    const arrKm = parseFloat(arrivalKm);
+    if (arrKm < activeTrip.starting_km) {
+      alert(`Invalid Odometer input. Value cannot be less than trip starting metrics (${activeTrip.starting_km} KM).`);
+      return;
+    }
+    setLoading(true);
     try {
-      const arrKm = parseFloat(arrivalKm);
       const { data: updated, error } = await supabase.from('trips').update({ arrival_km: arrKm, outbound_distance: arrKm - activeTrip.starting_km, arrival_km_image: arrivalKmImage, arrival_time: new Date().toISOString(), arrival_gps_lat: gps?.lat, arrival_gps_lng: gps?.lng, status: 'destination_reached', destination_name: destination || activeTrip.destination_name }).eq('id', activeTrip.id).select().single();
       if (error) throw error;
       setActiveTrip(updated); setCurrentScreen('home'); fetchAllTrips();
@@ -238,9 +312,17 @@ export default function App() {
   };
 
   const endTrip = async () => {
-    if (!activeTrip || !finalKm) return; setLoading(true);
+    if (!activeTrip || !finalKm) return;
+    const finKm = parseFloat(finalKm); 
+    const baseKm = activeTrip.arrival_km || activeTrip.starting_km;
+    
+    if (finKm < baseKm) {
+      alert(`Invalid Odometer metrics. Value cannot be less than previous logged milestone (${baseKm} KM).`);
+      return;
+    }
+    setLoading(true);
     try {
-      const finKm = parseFloat(finalKm); const arrKm = activeTrip.arrival_km || activeTrip.starting_km;
+      const arrKm = activeTrip.arrival_km || activeTrip.starting_km;
       const totDistance = finKm - activeTrip.starting_km;
       const totalBreakMins = restLogs.reduce((acc, log) => acc + (log.duration_minutes || 0), 0);
       const totalFuelAmt = fuelLogs.reduce((acc, log) => acc + (log.fuel_amount || 0), 0);
@@ -259,14 +341,42 @@ export default function App() {
   const formatDuration = (minutes: number) => `${Math.floor(minutes / 60)}h ${minutes % 60}m`;
   const openImageWindow = (base64Data: string) => { const w = window.open(); if (w) { w.document.write(`<img src="${base64Data}" style="max-width:100%; max-height:100vh; display:block; margin:auto; border-radius:8px;" />`); } };
 
+  // Explicit CSV Injection mitigation escaping structure
+  const escapeCSV = (val: any) => {
+    const str = val === null || val === undefined ? '' : String(val);
+    return `"${str.replace(/"/g, '""')}"`;
+  };
+
   const exportToCSV = async () => {
     const completedTripsList = trips.filter(t => t.status === 'completed');
     if(completedTripsList.length === 0) return alert("No completed trips to export.");
     
     const headers = ["Driver Name", "Vehicle", "Start Location", "Destination", "Start Date/Time", "Arrival Time", "Return Date/Time", "Total Duration", "Total Breaks (Mins)", "Starting KM", "Arrival KM", "Final KM", "Outbound Distance (KM)", "Inbound Distance (KM)", "Total Distance (KM)", "Total Fuel Used (Liters)", "Total Fuel Cost (Rs)", "Total Expenses (Rs)", "Overall Mileage", "Closing Notes"];
-    const rows = completedTripsList.map(t => [ t.driver_name, t.vehicle_number, t.start_location_name || 'Station', t.destination_name, new Date(t.start_time).toLocaleString(), t.arrival_time ? new Date(t.arrival_time).toLocaleString() : 'N/A', t.end_time ? new Date(t.end_time).toLocaleString() : 'N/A', t.duration_minutes ? formatDuration(t.duration_minutes) : '0h 0m', t.total_break_minutes || 0, t.starting_km, t.arrival_km || 'N/A', t.final_km || 'N/A', t.outbound_distance || 0, t.inbound_distance || 0, t.total_distance || 0, t.total_fuel_used || 0, t.total_fuel_cost || 0, t.total_expenses || 0, t.mileage ? t.mileage.toFixed(2) : 0, `"${(t.notes || '').replace(/"/g, '""')}"` ]);
-    const csvContent = [headers.join(','), ...rows.map(e => e.join(','))].join('\n');
     
+    const rows = completedTripsList.map(t => [
+      escapeCSV(t.driver_name),
+      escapeCSV(t.vehicle_number),
+      escapeCSV(t.start_location_name || 'Station'),
+      escapeCSV(t.destination_name),
+      escapeCSV(new Date(t.start_time).toLocaleString()),
+      escapeCSV(t.arrival_time ? new Date(t.arrival_time).toLocaleString() : 'N/A'),
+      escapeCSV(t.end_time ? new Date(t.end_time).toLocaleString() : 'N/A'),
+      escapeCSV(t.duration_minutes ? formatDuration(t.duration_minutes) : '0h 0m'),
+      escapeCSV(t.total_break_minutes || 0),
+      escapeCSV(t.starting_km),
+      escapeCSV(t.arrival_km || 'N/A'),
+      escapeCSV(t.final_km || 'N/A'),
+      escapeCSV(t.outbound_distance || 0),
+      escapeCSV(t.inbound_distance || 0),
+      escapeCSV(t.total_distance || 0),
+      escapeCSV(t.total_fuel_used || 0),
+      escapeCSV(t.total_fuel_cost || 0),
+      escapeCSV(t.total_expenses || 0),
+      escapeCSV(t.mileage ? t.mileage.toFixed(2) : 0),
+      escapeCSV(t.notes || '')
+    ]);
+    
+    const csvContent = [headers.join(','), ...rows.map(e => e.join(','))].join('\n');
     const fileName = `Fleet_Audit_Report_${new Date().toLocaleDateString()}.csv`;
     const file = new File([csvContent], fileName, { type: 'text/csv;charset=utf-8;' });
 
@@ -462,7 +572,19 @@ export default function App() {
             <div><div className="text-[11px] text-zinc-500 leading-none">Driver Profile</div><div className="font-medium text-sm -mt-0.5">{user?.name}</div></div>
           </div>
           <div className="flex items-center gap-2">
-            {gps && <div className="flex items-center gap-1 px-2 py-1 rounded-lg bg-emerald-500/10 border border-emerald-500/20"><div className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" /><span className="text-[10px] text-emerald-400 font-medium">GPS LOCK</span></div>}
+            {gpsError ? (
+              <div className="flex items-center gap-1 px-2 py-1 rounded-lg bg-red-500/10 border border-red-500/20">
+                <AlertTriangle className="w-3 h-3 text-red-400" />
+                <span className="text-[10px] text-red-400 font-medium uppercase">{gpsError}</span>
+              </div>
+            ) : gps ? (
+              <div className="flex items-center gap-1 px-2 py-1 rounded-lg bg-emerald-500/10 border border-emerald-500/20">
+                <div className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                <span className="text-[10px] text-emerald-400 font-medium">GPS LOCK</span>
+              </div>
+            ) : (
+              <div className="text-[10px] text-zinc-500">Awaiting GPS...</div>
+            )}
             <button onClick={logout} className="p-2 hover:bg-zinc-900 rounded-xl"><LogOut className="w-4.5 h-4.5 text-zinc-500 hover:text-red-400" /></button>
           </div>
         </div>
@@ -485,16 +607,28 @@ export default function App() {
                       <div className="grid grid-cols-3 gap-3">
                         <div className="bg-zinc-900/50 rounded-2xl p-3 border border-zinc-800/50"><Gauge className="w-4 h-4 text-zinc-600 mb-1.5" /><div className="text-[11px] text-zinc-500">Initial KM</div><div className="font-semibold">{activeTrip.starting_km}</div></div>
                         <div className="bg-zinc-900/50 rounded-2xl p-3 border border-zinc-800/50"><Wallet className="w-4 h-4 text-zinc-600 mb-1.5" /><div className="text-[11px] text-zinc-500">Expenses</div><div className="font-semibold">{expenseLogs.length}</div></div>
-                        <div className="bg-zinc-900/50 rounded-2xl p-3 border border-zinc-800/50"><Clock className="w-4 h-4 text-zinc-600 mb-1.5" /><div className="text-[11px] text-zinc-500">Duration</div><div className="font-semibold text-sm">{formatDuration(Math.round((Date.now() - new Date(activeTrip.start_time).getTime()) / 60000))}</div></div>
+                        <div className="bg-zinc-900/50 rounded-2xl p-3 border border-zinc-800/50"><Clock className="w-4 h-4 text-zinc-600 mb-1.5" /><div className="text-[11px] text-zinc-500">Duration</div><div className="font-semibold text-sm">{liveDuration}</div></div>
                       </div>
                     </div>
                   </div>
 
                   <div className="space-y-3">
                     <button onClick={() => setCurrentScreen('expense')} className="w-full bg-zinc-900 border border-zinc-800 rounded-2xl p-4 flex items-center gap-4"><div className="w-12 h-12 rounded-xl bg-pink-500/10 flex items-center justify-center"><Wallet className="w-6 h-6 text-pink-400" /></div><div className="text-left"><div className="font-medium">Log Travel Expense</div><div className="text-xs text-zinc-500 mt-0.5">Tolls, repairs, fines with receipt photo</div></div></button>
-                    {!activeRest && (<button onClick={() => setCurrentScreen('rest')} className="w-full bg-zinc-900 border border-zinc-800 rounded-2xl p-4 flex items-center gap-4"><div className="w-12 h-12 rounded-xl bg-orange-500/10 flex items-center justify-center"><Pause className="w-6 h-6 text-orange-400" /></div><div className="text-left"><div className="font-medium">Take Rest Break</div></div></button>)}
-                    <button onClick={() => setCurrentScreen('fuel')} className="w-full bg-zinc-900 border border-zinc-800 rounded-2xl p-4 flex items-center gap-4"><div className="w-12 h-12 rounded-xl bg-amber-500/10 flex items-center justify-center"><Fuel className="w-6 h-6 text-amber-400" /></div><div className="text-left"><div className="font-medium">Add Fuel Entry</div></div></button>
-                    {!activeTrip.arrival_time ? (<button onClick={() => setCurrentScreen('destination')} className="w-full bg-zinc-900 border border-zinc-800 rounded-2xl p-4 flex items-center gap-4"><div className="w-12 h-12 rounded-xl bg-cyan-500/10 flex items-center justify-center"><Flag className="w-6 h-6 text-cyan-400" /></div><div className="text-left"><div className="font-medium">Destination Reached</div></div></button>) : (<button onClick={() => setCurrentScreen('end')} className="w-full bg-gradient-to-r from-violet-600 to-fuchsia-600 rounded-2xl p-[1px]"><div className="rounded-2xl bg-zinc-950 p-4 flex items-center gap-4"><div className="w-12 h-12 rounded-xl bg-violet-500/20 flex items-center justify-center"><Home className="w-6 h-6 text-violet-400" /></div><div className="text-left"><div className="font-medium">Return to Station Base & End Trip</div></div></div></button>)}
+                    
+                    {activeRest ? (
+                      <button onClick={endRest} disabled={loading} className="w-full bg-orange-950/40 border border-orange-500/30 rounded-2xl p-4 flex items-center justify-between animate-pulse">
+                        <div className="flex items-center gap-4">
+                          <div className="w-12 h-12 rounded-xl bg-orange-500/20 flex items-center justify-center"><Pause className="w-6 h-6 text-orange-400" /></div>
+                          <div className="text-left"><div className="font-medium text-orange-400">On Active Break...</div><div className="text-xs text-zinc-500 mt-0.5">Tap to resume driving duty</div></div>
+                        </div>
+                        <Play className="w-5 h-5 text-orange-400 mr-2" />
+                      </button>
+                    ) : (
+                      <button onClick={() => setCurrentScreen('rest')} className="w-full bg-zinc-900 border border-zinc-800 rounded-2xl p-4 flex items-center gap-4"><div className="w-12 h-12 rounded-xl bg-orange-500/10 flex items-center justify-center"><Pause className="w-6 h-6 text-orange-400" /></div><div className="text-left"><div className="font-medium">Take Rest Break</div><div className="text-xs text-zinc-500 mt-0.5">Log downtime & rest locations</div></div></button>
+                    )}
+                    
+                    <button onClick={() => setCurrentScreen('fuel')} className="w-full bg-zinc-900 border border-zinc-800 rounded-2xl p-4 flex items-center gap-4"><div className="w-12 h-12 rounded-xl bg-amber-500/10 flex items-center justify-center"><Fuel className="w-6 h-6 text-amber-400" /></div><div className="text-left"><div className="font-medium">Add Fuel Entry</div><div className="text-xs text-zinc-500 mt-0.5">Log liters, costs, and snap receipts</div></div></button>
+                    {!activeTrip.arrival_time ? (<button onClick={() => setCurrentScreen('destination')} className="w-full bg-zinc-900 border border-zinc-800 rounded-2xl p-4 flex items-center gap-4"><div className="w-12 h-12 rounded-xl bg-cyan-500/10 flex items-center justify-center"><Flag className="w-6 h-6 text-cyan-400" /></div><div className="text-left"><div className="font-medium">Destination Reached</div><div className="text-xs text-zinc-500 mt-0.5">Arrived at customer yard / terminal</div></div></button>) : (<button onClick={() => setCurrentScreen('end')} className="w-full bg-gradient-to-r from-violet-600 to-fuchsia-600 rounded-2xl p-[1px]"><div className="rounded-2xl bg-zinc-950 p-4 flex items-center gap-4"><div className="w-12 h-12 rounded-xl bg-violet-500/20 flex items-center justify-center"><Home className="w-6 h-6 text-violet-400" /></div><div className="text-left"><div className="font-medium">Return to Station Base & End Trip</div><div className="text-xs text-zinc-400 mt-0.5">Complete trip lifecycle metrics</div></div></div></button>)}
                   </div>
 
                   <div className="mt-6 space-y-4">
@@ -529,16 +663,20 @@ export default function App() {
           {currentScreen === 'start' && (
             <motion.div key="start" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="space-y-4">
               <div className="flex items-center gap-3 mb-2"><button onClick={() => setCurrentScreen('home')} className="p-2 hover:bg-zinc-900 rounded-xl"><ArrowLeft className="w-5 h-5" /></button><h2 className="text-xl font-semibold">Start New Trip</h2></div>
-              <div><label className="text-xs text-zinc-500 mb-1 block">Select Vehicle</label><select value={selectedVehicle?.id || ''} onChange={(e) => setSelectedVehicle(FLEET_VEHICLES.find(v => v.id === Number(e.target.value)) || null)} className="w-full bg-zinc-900 border border-zinc-800 rounded-2xl px-4 py-3.5 text-white"><option value="">Choose a truck...</option>{FLEET_VEHICLES.map(v => <option key={v.id} value={v.id}>{v.vehicle_number} • {v.model}</option>)}</select></div>
-              <div><label className="text-xs text-zinc-500 mb-1 block">Destination</label><input type="text" value={destination} onChange={(e) => setDestination(e.target.value)} placeholder="Where are you going?" className="w-full bg-zinc-900 border border-zinc-800 rounded-2xl px-4 py-3.5" /></div>
-              <div><label className="text-xs text-zinc-500 mb-1 block">Starting KM Reading</label><input type="number" value={startingKm} onChange={(e) => setStartingKm(e.target.value)} placeholder="55" className="w-full bg-zinc-900 border border-zinc-800 rounded-2xl px-4 py-3.5" /></div>
+              <div><label className="text-xs text-zinc-500 mb-1 block">Select Vehicle *</label><select value={selectedVehicle?.id || ''} onChange={(e) => setSelectedVehicle(FLEET_VEHICLES.find(v => v.id === Number(e.target.value)) || null)} className="w-full bg-zinc-900 border border-zinc-800 rounded-2xl px-4 py-3.5 text-white"><option value="">Choose a truck...</option>{FLEET_VEHICLES.map(v => <option key={v.id} value={v.id}>{v.vehicle_number} • {v.model}</option>)}</select></div>
+              <div><label className="text-xs text-zinc-500 mb-1 block">Destination *</label><input type="text" value={destination} onChange={(e) => setDestination(e.target.value)} placeholder="Where are you going?" className="w-full bg-zinc-900 border border-zinc-800 rounded-2xl px-4 py-3.5" /></div>
+              <div><label className="text-xs text-zinc-500 mb-1 block">Starting KM Reading *</label><input type="number" value={startingKm} onChange={(e) => setStartingKm(e.target.value)} placeholder="e.g. 12450" className="w-full bg-zinc-900 border border-zinc-800 rounded-2xl px-4 py-3.5" /></div>
               <div><label className="text-xs text-zinc-500 mb-1 block">Odometer Photo Proof *</label><button type="button" onClick={() => handleImageCapture('start')} className="w-full bg-zinc-900 border border-zinc-800 rounded-2xl p-4 text-center">{startingKmImage ? <span className="text-emerald-400 text-sm">✓ Photo attached successfully</span> : <span className="text-zinc-400 text-sm">Tap to take photo of odometer</span>}</button></div>
               <button onClick={startTrip} disabled={loading || !selectedVehicle || !destination || !startingKm || !startingKmImage} className="w-full bg-emerald-600 py-3.5 rounded-2xl font-medium mt-2">Start Trip</button>
             </motion.div>
           )}
+          
           {currentScreen === 'rest' && (<motion.div key="rest" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="space-y-4"><div className="flex items-center gap-3 mb-2"><button onClick={() => setCurrentScreen('home')} className="p-2 hover:bg-zinc-900 rounded-xl"><ArrowLeft className="w-5 h-5" /></button><h2 className="text-xl font-semibold">Start Rest Break</h2></div><div><label className="text-xs text-zinc-500 mb-1 block">Location</label><input type="text" value={restLocation} onChange={(e) => setRestLocation(e.target.value)} placeholder="e.g. Highway Toll Plaza" className="w-full bg-zinc-900 border border-zinc-800 rounded-2xl px-4 py-3.5" /></div><button onClick={startRest} disabled={loading} className="w-full bg-orange-600 py-3.5 rounded-2xl font-medium mt-2">Start Break</button></motion.div>)}
+          
           {currentScreen === 'fuel' && (<motion.div key="fuel" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="space-y-4"><div className="flex items-center gap-3 mb-2"><button onClick={() => setCurrentScreen('home')} className="p-2 hover:bg-zinc-900 rounded-xl"><ArrowLeft className="w-5 h-5" /></button><h2 className="text-xl font-semibold">Log Fuel</h2></div><div className="grid grid-cols-2 gap-3"><div><label className="text-xs text-zinc-500 mb-1 block">Liters</label><input type="number" step="0.1" value={fuelQuantity} onChange={(e) => setFuelQuantity(e.target.value)} placeholder="0.0" className="w-full bg-zinc-900 border border-zinc-800 rounded-2xl px-4 py-3.5" /></div><div><label className="text-xs text-zinc-500 mb-1 block">Cost (₹)</label><input type="number" value={fuelAmount} onChange={(e) => setFuelAmount(e.target.value)} placeholder="₹ Amount" className="w-full bg-zinc-900 border border-zinc-800 rounded-2xl px-4 py-3.5" /></div></div><div><label className="text-xs text-zinc-500 mb-1 block">Current KM</label><input type="number" value={currentKm} onChange={(e) => setCurrentKm(e.target.value)} placeholder="Odometer" className="w-full bg-zinc-900 border border-zinc-800 rounded-2xl px-4 py-3.5" /></div><div><button type="button" onClick={() => handleImageCapture('fuel')} className="w-full bg-zinc-900 border border-zinc-800 rounded-2xl p-4 text-center">{fuelBillImage ? <span className="text-amber-400 text-sm">✓ Receipt mapped</span> : <span className="text-zinc-400 text-sm">Take photo of bill</span>}</button></div><button onClick={addFuel} disabled={loading || !fuelQuantity || !fuelAmount || !currentKm} className="w-full bg-amber-600 py-3.5 rounded-2xl font-medium">Save Fuel</button></motion.div>)}
+          
           {currentScreen === 'destination' && (<motion.div key="destination" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="space-y-4"><div className="flex items-center gap-3 mb-2"><button onClick={() => setCurrentScreen('home')} className="p-2 hover:bg-zinc-900 rounded-xl"><ArrowLeft className="w-5 h-5" /></button><h2 className="text-xl font-semibold">Destination Reached</h2></div><div><label className="text-xs text-zinc-500 mb-1 block">Arrival KM Reading</label><input type="number" value={arrivalKm} onChange={(e) => setArrivalKm(e.target.value)} placeholder="Odometer" className="w-full bg-zinc-900 border border-zinc-800 rounded-2xl px-4 py-3.5" /></div><div><button type="button" onClick={() => handleImageCapture('arrival')} className="w-full bg-zinc-900 border border-zinc-800 rounded-2xl p-4 text-center">{arrivalKmImage ? <span className="text-cyan-400 text-sm">✓ Proof logged</span> : <span className="text-zinc-400 text-sm">Snap odometer gauge</span>}</button></div><button onClick={reachDestination} disabled={loading || !arrivalKm} className="w-full bg-cyan-600 py-3.5 rounded-2xl font-medium">Submit</button></motion.div>)}
+          
           {currentScreen === 'end' && (<motion.div key="end" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="space-y-4"><div className="flex items-center gap-3 mb-2"><button onClick={() => setCurrentScreen('home')} className="p-2 hover:bg-zinc-900 rounded-xl"><ArrowLeft className="w-5 h-5" /></button><h2 className="text-xl font-semibold">End Trip</h2></div><div><label className="text-xs text-zinc-500 mb-1 block">Ending KM Reading</label><input type="number" value={finalKm} onChange={(e) => setFinalKm(e.target.value)} placeholder="Final odometer" className="w-full bg-zinc-900 border border-zinc-800 rounded-2xl px-4 py-3.5" /></div><div><button type="button" onClick={() => handleImageCapture('final')} className="w-full bg-zinc-900 border border-zinc-800 rounded-2xl p-4 text-center">{finalKmImage ? <span className="text-violet-400 text-sm">✓ Final proof linked</span> : <span className="text-zinc-400 text-sm">Snap final gauge</span>}</button></div><button onClick={endTrip} disabled={loading || !finalKm || !finalKmImage} className="w-full bg-gradient-to-r from-violet-600 to-fuchsia-600 py-3.5 rounded-2xl font-medium">End Trip</button></motion.div>)}
         </AnimatePresence>
       </main>
